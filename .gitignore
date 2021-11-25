@@ -127,3 +127,12 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+environment.yml
+conda-reqs.txt
+conda-reqs.txt
+
+ALL_tsp
+.DS_Store
+H1_input_a.txt
+tsp_solver_gurobi.ipynb
+main.py
