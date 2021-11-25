@@ -2,3 +2,4 @@ ENCODER_LAYERS = 6
 ENCODER_D_MODEL = 128
 ENCODER_CLS_IN_FEAT = 3         # nodes number, mean, std
 ENCODER_N_NODES = 100
+MAX_LEN = 1024
