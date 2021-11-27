@@ -1,9 +1,16 @@
+from typing import Optional
 from torch import nn
 import torch
 from torch._C import dtype
 from torch.functional import Tensor
+from torch.nn.modules.dropout import Dropout
+from torch.nn.modules.linear import Linear
+from torch.nn.modules.normalization import LayerNorm
+from torch.nn.modules.transformer import TransformerEncoder
+from activation import MHA
 from constants import DECODER_LAYERS, ENCODER_D_MODEL, ENCODER_LAYERS
 import math
+import torch.nn.functional as F
 
 
 class PositionalEncoding(nn.Module):
@@ -26,26 +33,115 @@ class PositionalEncoding(nn.Module):
         return x + self.pe[:, :x.size(1)]
 
 
-class GraphTransformer(nn.Transformer):
+class TSPTransformerEncoderLayer(nn.TransformerEncoderLayer):
+    def __init__(self, d_model, nhead, dim_feedforward=1024, dropout_p=0.1, activation=F.relu, layer_norm_eps=0.00001, norm_first=False) -> None:
+        super().__init__(d_model, nhead, dim_feedforward=dim_feedforward, dropout=dropout_p, activation=activation, layer_norm_eps=layer_norm_eps, batch_first=True, norm_first=norm_first)
+        self.self_attn = MHA(d_model, nhead, dropout_p)
+
+
+class TSPTransformerDecoderLayer(nn.Module):
+    def __init__(self, d_model, nhead, dim_feedforward=1024, dropout_p=0.1, activation=F.relu,
+                 layer_norm_eps=1e-5, norm_first=False) -> None:
+        super().__init__()
+        self.d_model = d_model
+        self.nhead = nhead
+        self.dim_feedforward = dim_feedforward
+        self.activation = activation
+        self.layer_norm_eps = layer_norm_eps
+        self.norm_first = norm_first
+
+        self.self_attn = MHA(d_model, nhead)
+        self.multihead_attn = MHA(d_model, nhead)
+        self.last_attn = MHA(d_model, 1)
+        self.linear1 = Linear(d_model, dim_feedforward)
+        self.linear2 = Linear(dim_feedforward, d_model)
+        self.norm1 = LayerNorm(d_model, eps=layer_norm_eps)
+        self.norm2 = LayerNorm(d_model, eps=layer_norm_eps)
+        self.norm3 = LayerNorm(d_model, eps=layer_norm_eps)
+        self.dropout1 = Dropout(dropout_p)
+        self.dropout2 = Dropout(dropout_p)
+
+    def _self_attn_blk(self, h_t: Tensor):
+        out, _ = self.self_attn(h_t, h_t, h_t)
+        return self.norm1(h_t + out)
+
+    def _query_attn_blk(self, query: Tensor, memory: Tensor, node_mask: Optional[Tensor] = None):
+        out, _ = self.multihead_attn(query, memory, memory, attn_mask=node_mask)
+        return self.norm2(query + out)
+
+    def _ff_blk(self, x: Tensor):
+        out = self.activation(self.dropout1(self.linear1(x)))
+        return self.norm3(out + self.activation(self.dropout2(self.linear2(out))))        
+
+    def forward(self, h_t: Tensor, memory: Tensor, node_mask: Optional[Tensor] = None,):
+        query = self._self_attn_blk(h_t)
+        out = self._query_attn_blk(query, memory, node_mask)
+        return self._ff_blk(out)
+
+
+class TSPTransformerDecoderLayerFinal(TSPTransformerDecoderLayer):
+    def __init__(self, d_model, nhead, c=10) -> None:
+        super().__init__(d_model, nhead)
+        self.in_proj = nn.Linear(in_features=2 * d_model, out_features=2 * d_model)
+        self.c = c
+
+    def forward(self, h_t: Tensor, memory: Tensor, node_mask: Tensor):
+        # decoding step 1 -> positional encoding
+        # decoding step 2
+        query = self._self_attn_blk(h_t)
+
+        # decoding step 3
+        out = self._query_attn_blk(query, memory, node_mask)
+        
+        # decodinig step 4 
+        q, k = self.in_proj(torch.cat((out, memory), dim=-1)).chunk(2, dim=-1)
+        q = q / math.sqrt(self.d_model)
+        attn = torch.bmm(q, k)
+        attn += node_mask
+        probs = F.softmax(self.c * torch.tanh(attn))
+        return probs
+
+
+class TSPTransformerDecoder(nn.Module):
+    def __init__(self, d_model, nhead, dim_feedforward=1024, dropout_p=0.1, layers=2, c=10) -> None:
+        super().__init__()
+        self.decoder_layers = nn.ModuleList([
+            TSPTransformerDecoderLayer(d_model, nhead, dim_feedforward, dropout_p) for _ in range(layers - 1)])
+        self.final_layer = TSPTransformerDecoderLayerFinal(d_model, nhead, c)
+    
+    def forward(self, h_t: Tensor, memory: Tensor, node_mask: Tensor):
+        output = h_t
+
+        for mod in self.decoder_layers:
+            output = mod(output, memory, node_mask=node_mask)
+
+        probs = self.final_layer(output, memory, node_mask)
+
+        return probs
+
+
+class TSPTransformer(nn.Module):
     def __init__(self,
         in_features=2,
-        d_model=ENCODER_D_MODEL, 
-        nhead=8,
-        num_encoder_layers=ENCODER_LAYERS,
-        num_decoder_layers=DECODER_LAYERS,
-        dim_feedforward=1024) -> None:
+        d_model=128, 
+        nhead=4,
+        dim_feedforward=1024,
+        dropout_p=0.1,
+        num_encoder_layers=6,
+        num_decoder_layers=2,
+        c=10) -> None:
 
-        super().__init__(d_model=d_model, nhead=nhead, num_encoder_layers=num_encoder_layers, num_decoder_layers=num_decoder_layers,
-            dim_feedforward=dim_feedforward, dropout=0.0, batch_first=True)
-
-        self.decoder.norm = None
+        super().__init__()
         self.pos_enc = PositionalEncoding(d_model, max_len=10000)
         self.input_ff = nn.Linear(in_features=in_features, out_features=d_model)
+        encoder_layer = TSPTransformerEncoderLayer(d_model, nhead, dim_feedforward, dropout_p)
+        enc_norm = LayerNorm(d_model)
+        self.encoder = TransformerEncoder(encoder_layer, num_encoder_layers, enc_norm)
+        self.decoder = TSPTransformerDecoder(d_model, nhead, dim_feedforward, dropout_p, num_decoder_layers, c)
 
 
     def encode(self, src):
         src = self.input_ff(src)
-        src = self.pos_enc(src)
         memory = self.encoder(src)
         return memory
 
@@ -58,8 +154,8 @@ class GraphTransformer(nn.Transformer):
         h_start = memory[zero_to_bsz, idx_start_placeholder].view(bsz, 1, -1) + pe[:, 0]
         
         # initialize mask of visited cities
-        mask_visited_nodes = torch.zeros(bsz, nodes + 1, device=memory.device).bool() # False
-        mask_visited_nodes[zero_to_bsz, idx_start_placeholder] = True
+        visited_node_mask = torch.zeros(bsz, nodes + 1, device=memory.device)
+        visited_node_mask[zero_to_bsz, idx_start_placeholder] = float("-inf")
 
         # list that will contain Long tensors of shape (bsz,) that gives the idx of the cities chosen at time t
         tours = []
@@ -69,7 +165,7 @@ class GraphTransformer(nn.Transformer):
         for t in range(nodes):
             
             # compute probability over the next node in the tour
-            prob_next_node = self.decoder(h_t, memory, memory_mask=mask_visited_nodes) # size(prob_next_node)=(bsz, nodes+1)
+            prob_next_node = self.decoder(h_t, memory, node_mask=visited_node_mask) # size(prob_next_node)=(bsz, nodes+1)
             prob_next_node = nn.functional.softmax(prob_next_node, dim=1)
             
             # choose node with highest probability
@@ -83,8 +179,8 @@ class GraphTransformer(nn.Transformer):
             tours.append(idx)
 
             # update masks with visited nodes
-            mask_visited_nodes = mask_visited_nodes.clone()
-            mask_visited_nodes[zero_to_bsz, idx] = True
+            visited_node_mask = visited_node_mask.clone()
+            visited_node_mask[zero_to_bsz, idx] = float("-inf")
 
         # convert the list of nodes into a tensor of shape (bsz,num_cities)
         tours = torch.stack(tours, dim=1) # size(col_index)=(bsz, nodes)
@@ -98,7 +194,7 @@ class GraphTransformer(nn.Transformer):
         
 
 if __name__ == '__main__':
-    model = GraphTransformer()
+    model = TSPTransformer()
     graph = torch.randint(low=int(-1e10), high=int(1e10 + 1), size=(3, 10, 2), dtype=torch.float32)
     out = model(graph)
     pass
