@@ -16,21 +16,25 @@ def multi_head_attn(
     out_proj_bias: Tensor = None,          # (D, )
     nhead: int = 1,
     mask: Tensor = None,                   # (N, TL, SL)
-    dropout_p: float = 0.0):
+    dropout_p: float = 0.0,
+    training: bool = True):
 
     bsz, tgt_len, embd_dim = query.shape
     _, src_len, _ = key.shape
+    assert embd_dim % nhead == 0, "Embedding dimension must be divisible for the number of heads"
     head_dim = embd_dim // nhead
     q, k, v  = _in_projection_packed(query, key, value, in_proj_weight, in_proj_bias)
-    q = q.contiguous().view(tgt_len, bsz * nhead, head_dim)
-    k = k.contiguous().view(src_len, bsz * nhead, head_dim)
-    v = v.contiguous().view(src_len, bsz * nhead, head_dim)
+    q = q.contiguous().view(tgt_len, bsz * nhead, head_dim).transpose(0, 1)
+    k = k.contiguous().view(src_len, bsz * nhead, head_dim).transpose(0, 1)
+    v = v.contiguous().view(src_len, bsz * nhead, head_dim).transpose(0, 1)
 
     q = q / math.sqrt(head_dim)
     attn = torch.bmm(q, k.transpose(-2, -1))
     if mask is not None:
         attn += mask
     attn = softmax(attn, dim=-1)
+    if not training:
+        dropout_p = 0.0
     if dropout_p > 0.0:
         attn = dropout(attn, p=dropout_p)
     out = torch.bmm(attn, v)
@@ -57,7 +61,7 @@ class MHA(nn.Module):
     def forward(self, query: Tensor, key: Tensor, value: Tensor, need_weights: bool = True, attn_mask: Optional[Tensor] = None, *args, **kwargs):
         out, attn = multi_head_attn(query, key, value, self.in_proj_weight, self.in_proj_bias,
          self.out_proj_weight, self.out_proj_bias, self.nhead, attn_mask,
-            self.dropout_p) 
+            self.dropout_p, self.training) 
         if need_weights:
             return out, attn
         else:
@@ -68,6 +72,7 @@ if __name__ == '__main__':
     bsz, src_len, embd_dim, nhead = 4, 100, 128, 4
     mha = MHA(embd_dim, nhead, dropout_p=0.1)
     src = torch.rand(bsz, src_len, embd_dim)
-    out, attn_w = mha(src, src, src)
+    memory = torch.rand(bsz, 10, embd_dim)
+    out, attn_w = mha(src, memory, memory)
     assert out.shape == src.shape
     

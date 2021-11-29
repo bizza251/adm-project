@@ -1,7 +1,6 @@
 from typing import Optional
 from torch import nn
 import torch
-from torch._C import dtype
 from torch.functional import Tensor
 from torch.nn.modules.dropout import Dropout
 from torch.nn.modules.linear import Linear
