@@ -32,33 +32,58 @@ class PositionalEncoding(nn.Module):
         return x + self.pe[:, :x.size(1)]
 
 
-class TSPTransformerEncoderLayer(nn.TransformerEncoderLayer):
-    def __init__(self, d_model, nhead, dim_feedforward=1024, dropout_p=0.1, activation=F.relu, layer_norm_eps=0.00001, norm_first=False) -> None:
-        super().__init__(d_model, nhead, dim_feedforward=dim_feedforward, dropout=dropout_p, activation=activation, layer_norm_eps=layer_norm_eps, batch_first=True, norm_first=norm_first)
-        self.self_attn = MHA(d_model, nhead, dropout_p)
+class TSPTransformerEncoderLayer(nn.Module):
+    def __init__(self, d_model, nhead, dim_feedforward=1024, dropout_p=0.1, activation=F.relu, layer_norm_eps=1e-5, norm_first=False) -> None:
+        super().__init__()
+
+        self.self_attn = MHA(d_model, nhead, 0.0)
+        self.activation = activation
+        self.linear1 = Linear(d_model, dim_feedforward)
+        self.linear2 = Linear(dim_feedforward, d_model)
+        self.norm1 = LayerNorm(d_model, layer_norm_eps)
+        self.norm2 = LayerNorm(d_model, layer_norm_eps)
+        self.dropout = Dropout(dropout_p)
+
+    def forward(self, h_t: Tensor):
+        attn_out, attn_weight = self.self_attn(h_t, h_t, h_t, need_weights=True)
+        out = self.norm1(h_t + attn_out)
+        out_ff = self.linear2(self.dropout(self.activation(self.linear1(out))))
+        out = self.norm2(out + out_ff)
+        return out, attn_weight
+
+
+class TSPTransformerEncoder(nn.Module):
+    def __init__(self, d_model, nhead, dim_feedforward=1024, dropout_p=0.1, activation=F.relu, layers=2, 
+            layer_norm_eps=1e-5, norm_first=False) -> None:
+        super().__init__()
+        self.decoder_layers = nn.ModuleList([
+            TSPTransformerEncoderLayer(d_model, nhead, dim_feedforward, dropout_p, activation, layer_norm_eps, norm_first) for _ in range(layers)])
+    
+    def forward(self, h_t: Tensor):
+        output, attn_weight = h_t, None
+
+        for mod in self.decoder_layers:
+            output, attn_weight = mod(output)
+
+        return output, attn_weight
 
 
 class TSPTransformerDecoderLayer(nn.Module):
     def __init__(self, d_model, nhead, dim_feedforward=1024, dropout_p=0.1, activation=F.relu,
                  layer_norm_eps=1e-5, norm_first=False) -> None:
         super().__init__()
-        self.d_model = d_model
-        self.nhead = nhead
-        self.dim_feedforward = dim_feedforward
+
         self.activation = activation
-        self.layer_norm_eps = layer_norm_eps
         self.norm_first = norm_first
 
         self.self_attn = MHA(d_model, nhead)
         self.multihead_attn = MHA(d_model, nhead)
-        self.last_attn = MHA(d_model, 1)
         self.linear1 = Linear(d_model, dim_feedforward)
         self.linear2 = Linear(dim_feedforward, d_model)
         self.norm1 = LayerNorm(d_model, eps=layer_norm_eps)
         self.norm2 = LayerNorm(d_model, eps=layer_norm_eps)
         self.norm3 = LayerNorm(d_model, eps=layer_norm_eps)
-        self.dropout1 = Dropout(dropout_p)
-        self.dropout2 = Dropout(dropout_p)
+        self.dropout = Dropout(dropout_p)
 
     def _self_attn_blk(self, h_t: Tensor):
         out, _ = self.self_attn(h_t, h_t, h_t)
@@ -69,8 +94,8 @@ class TSPTransformerDecoderLayer(nn.Module):
         return self.norm2(query + out)
 
     def _ff_blk(self, x: Tensor):
-        out = self.activation(self.dropout1(self.linear1(x)))
-        return self.norm3(x + self.activation(self.dropout2(self.linear2(out))))        
+        out = self.linear2(self.activation(self.dropout(self.linear1(x))))
+        return self.norm3(x + out)        
 
     def forward(self, h_t: Tensor, memory: Tensor, node_mask: Optional[Tensor] = None,):
         query = self._self_attn_blk(h_t)
@@ -79,13 +104,14 @@ class TSPTransformerDecoderLayer(nn.Module):
 
 
 class TSPTransformerDecoderLayerFinal(TSPTransformerDecoderLayer):
-    def __init__(self, d_model, nhead, c=10) -> None:
-        super().__init__(d_model, nhead)
+    def __init__(self, d_model, nhead, dim_feedforward=1024, dropout_p=0.1, activation=F.relu,
+                 layer_norm_eps=1e-5, norm_first=False, c=10):
+        super().__init__(d_model, nhead, dim_feedforward, dropout_p, activation, layer_norm_eps, norm_first)
         self.in_proj_q = nn.Linear(in_features=d_model, out_features=d_model)
         self.in_proj_k = nn.Linear(in_features=d_model, out_features=d_model)
-        self.in_proj_v = nn.Linear(in_features=d_model, out_features=d_model)
         self.c = c
         self.nhead = nhead
+        self.d_model = d_model
 
     def forward(self, h_t: Tensor, memory: Tensor, node_mask: Tensor):
         # decoding step 1 -> positional encoding
@@ -114,10 +140,12 @@ class TSPTransformerDecoderLayerFinal(TSPTransformerDecoderLayer):
 
 
 class TSPTransformerDecoder(nn.Module):
-    def __init__(self, d_model, nhead, dim_feedforward=1024, dropout_p=0.1, layers=2, c=10) -> None:
+    def __init__(self, d_model, nhead, dim_feedforward=1024, dropout_p=0.1, activation=F.relu, layer_norm_eps=1e-5, norm_first=False,
+            layers=2, c=10) -> None:
         super().__init__()
         self.decoder_layers = nn.ModuleList([
-            TSPTransformerDecoderLayer(d_model, nhead, dim_feedforward, dropout_p) for _ in range(layers - 1)])
+            TSPTransformerDecoderLayer(d_model, nhead, dim_feedforward, dropout_p, 
+                activation, layer_norm_eps, norm_first) for _ in range(layers - 1)])
         self.final_layer = TSPTransformerDecoderLayerFinal(d_model, nhead, c)
     
     def forward(self, h_t: Tensor, memory: Tensor, node_mask: Tensor):
@@ -138,6 +166,9 @@ class TSPTransformer(nn.Module):
         nhead=4,
         dim_feedforward=1024,
         dropout_p=0.1,
+        activation=F.relu,
+        layer_norm_eps=1e-5,
+        norm_first=False,
         num_encoder_layers=6,
         num_decoder_layers=2,
         c=10) -> None:
@@ -145,24 +176,27 @@ class TSPTransformer(nn.Module):
         super().__init__()
         self.pos_enc = PositionalEncoding(d_model, max_len=10000)
         self.input_ff = nn.Linear(in_features=in_features, out_features=d_model)
-        encoder_layer = TSPTransformerEncoderLayer(d_model, nhead, dim_feedforward, dropout_p)
-        enc_norm = LayerNorm(d_model)
-        self.encoder = TransformerEncoder(encoder_layer, num_encoder_layers, enc_norm)
-        self.decoder = TSPTransformerDecoder(d_model, nhead, dim_feedforward, dropout_p, num_decoder_layers, c)
+        self.encoder = TSPTransformerEncoder(d_model, nhead, dim_feedforward, dropout_p, activation, num_encoder_layers, layer_norm_eps, norm_first)
+        self.decoder = TSPTransformerDecoder(d_model, nhead, dim_feedforward, dropout_p, activation, layer_norm_eps, norm_first, num_decoder_layers, c)
         self.d_model = d_model
-
+        self.z = nn.parameter.Parameter(torch.empty(d_model, 1))
+        nn.init.xavier_uniform_(self.z)
 
     def encode(self, src):
         src = self.input_ff(src)
-        memory = self.encoder(src)
-        return memory
+        memory, attn_weight = self.encoder(src)
+        return memory, attn_weight
 
     def decode(self, memory, visited_node_mask=None):
         bsz, nodes = memory.shape[:2]
         zero_to_bsz = torch.arange(bsz)
         pe = self.pos_enc(torch.zeros(1, nodes + 1, 1)).to(memory.device)
 
-        idx_start_placeholder = torch.randint(low=0, high=nodes, size=(bsz,)).to(memory.device)
+        # idx_start_placeholder = torch.randint(low=0, high=nodes, size=(bsz,)).to(memory.device)
+        z = self.z.expand(bsz, -1, 1)
+        h_start_logits = torch.bmm(memory, z).squeeze()
+        h_start_probs = torch.softmax(h_start_logits, dim=-1)
+        idx_start_placeholder = torch.argmax(h_start_probs, dim=-1)
         h_start = memory[zero_to_bsz, idx_start_placeholder].view(bsz, 1, -1) + pe[:, 0]
         
         # initialize mask of visited cities
@@ -207,13 +241,13 @@ class TSPTransformer(nn.Module):
         return tours
 
     def forward(self, x):
-        memory = self.encode(x)
+        memory, _ = self.encode(x)
         tour = self.decode(memory)
         return tour
         
 
 if __name__ == '__main__':
     model = TSPTransformer()
-    graph = torch.randint(low=int(-1e10), high=int(1e10 + 1), size=(3, 10, 2), dtype=torch.float32)
+    graph = torch.randint(low=int(-1e6), high=int(1e6 + 1), size=(3, 10, 2), dtype=torch.float32)
     out = model(graph)
-    pass
+    print(out)
