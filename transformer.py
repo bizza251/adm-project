@@ -198,6 +198,7 @@ class TSPTransformer(nn.Module):
         h_start_probs = torch.softmax(h_start_logits, dim=-1)
         idx_start_placeholder = torch.argmax(h_start_probs, dim=-1)
         h_start = memory[zero_to_bsz, idx_start_placeholder].view(bsz, 1, -1) + pe[:, 0]
+        sum_logits_node = [torch.log(h_start_logits[zero_to_bsz, idx_start_placeholder])]
         
         # initialize mask of visited cities
         visited_node_mask = torch.zeros(bsz, nodes, device=memory.device)
@@ -216,6 +217,7 @@ class TSPTransformer(nn.Module):
             
             # choose node with highest probability
             idx = torch.argmax(prob_next_node, dim=1) # size(query)=(bsz,)
+            sum_logits_node.append(torch.log(prob_next_node[zero_to_bsz, idx]))
 
             # update embedding of the current visited node
             h_t = memory[zero_to_bsz, idx] # size(h_start)=(bsz, dim_emb)
@@ -237,17 +239,20 @@ class TSPTransformer(nn.Module):
 
         # close the tour
         tours = torch.cat((tours, tours[:, 0:1]), dim=-1)
+
+        sum_logits_node = torch.stack(sum_logits_node, dim=1).sum(1)
         
-        return tours
+        return tours, sum_logits_node
 
     def forward(self, x):
         memory, _ = self.encode(x)
-        tour = self.decode(memory)
-        return tour
+        tour, sum_logits_node = self.decode(memory)
+        return tour, sum_logits_node
         
 
 if __name__ == '__main__':
     model = TSPTransformer()
     graph = torch.randint(low=int(-1e6), high=int(1e6 + 1), size=(3, 10, 2), dtype=torch.float32)
-    out = model(graph)
-    print(out)
+    out, sum_logits_node = model(graph)
+    print(out, sum_logits_node)
+    assert sum_logits_node.grad_fn is not None
