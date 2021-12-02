@@ -108,7 +108,7 @@ class TSPTransformerDecoderLayerFinal(TSPTransformerDecoderLayer):
             node_mask = torch.repeat_interleave(node_mask, repeats=self.nhead, dim=0)
         node_mask = node_mask.unsqueeze(1)
         attn = attn + node_mask
-        probs = F.softmax(self.c * torch.tanh(attn))
+        probs = F.softmax(self.c * torch.tanh(attn), dim=-1)
         probs = probs.transpose(0, 1).contiguous().view(bsz, self.nhead, src_len).mean(1)
         return probs
 
@@ -160,7 +160,7 @@ class TSPTransformer(nn.Module):
     def decode(self, memory, visited_node_mask=None):
         bsz, nodes = memory.shape[:2]
         zero_to_bsz = torch.arange(bsz)
-        pe = self.pos_enc(torch.zeros(1, nodes, 1)).to(memory.device)
+        pe = self.pos_enc(torch.zeros(1, nodes + 1, 1)).to(memory.device)
 
         idx_start_placeholder = torch.randint(low=0, high=nodes, size=(bsz,)).to(memory.device)
         h_start = memory[zero_to_bsz, idx_start_placeholder].view(bsz, 1, -1) + pe[:, 0]
@@ -170,11 +170,11 @@ class TSPTransformer(nn.Module):
         visited_node_mask[zero_to_bsz, idx_start_placeholder] = float("-inf")
 
         # list that will contain Long tensors of shape (bsz,) that gives the idx of the cities chosen at time t
-        tours = []
+        tours = [idx_start_placeholder]
 
         # construct tour recursively
         h_t = h_start
-        for t in range(nodes - 1):
+        for t in range(nodes - 2):
             
             # compute probability over the next node in the tour
             prob_next_node = self.decoder(h_t, memory, node_mask=visited_node_mask) # size(prob_next_node)=(bsz, nodes+1)
@@ -183,24 +183,26 @@ class TSPTransformer(nn.Module):
             # choose node with highest probability
             idx = torch.argmax(prob_next_node, dim=1) # size(query)=(bsz,)
 
-            if (t == nodes - 1):
-                t = t
-                pass
             # update embedding of the current visited node
             h_t = memory[zero_to_bsz, idx] # size(h_start)=(bsz, dim_emb)
-            h_t = h_t + pe[:, max(t + 1, t)].expand(bsz, self.d_model)
+            h_t = h_t + pe[:, t + 1].expand(bsz, self.d_model)
             h_t = h_t.unsqueeze(1)
             
             # update tour
             tours.append(idx)
 
-
             # update masks with visited nodes
             visited_node_mask = visited_node_mask.clone()
             visited_node_mask[zero_to_bsz, idx] = float("-inf")
+        
+        last_idx = torch.nonzero(visited_node_mask != float('-inf'))
+        tours.append(last_idx[:, 1])
 
         # convert the list of nodes into a tensor of shape (bsz,num_cities)
         tours = torch.stack(tours, dim=1) # size(col_index)=(bsz, nodes)
+
+        # close the tour
+        tours = torch.cat((tours, tours[:, 0:1]), dim=-1)
         
         return tours
 
