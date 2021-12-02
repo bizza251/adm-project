@@ -31,7 +31,9 @@ def multi_head_attn(
     q = q / math.sqrt(head_dim)
     attn = torch.bmm(q, k.transpose(-2, -1))
     if mask is not None:
-        attn += mask
+        if nhead > 1:
+            mask = torch.repeat_interleave(mask, repeats=nhead, dim=0).unsqueeze(1)
+        attn = attn + mask
     attn = softmax(attn, dim=-1)
     if not training:
         dropout_p = 0.0

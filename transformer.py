@@ -6,7 +6,7 @@ from torch.nn.modules.dropout import Dropout
 from torch.nn.modules.linear import Linear
 from torch.nn.modules.normalization import LayerNorm
 from torch.nn.modules.transformer import TransformerEncoder
-from activation import MHA
+from activation import MHA, multi_head_attn
 from constants import DECODER_LAYERS, ENCODER_D_MODEL, ENCODER_LAYERS
 import math
 import torch.nn.functional as F
@@ -70,7 +70,7 @@ class TSPTransformerDecoderLayer(nn.Module):
 
     def _ff_blk(self, x: Tensor):
         out = self.activation(self.dropout1(self.linear1(x)))
-        return self.norm3(out + self.activation(self.dropout2(self.linear2(out))))        
+        return self.norm3(x + self.activation(self.dropout2(self.linear2(out))))        
 
     def forward(self, h_t: Tensor, memory: Tensor, node_mask: Optional[Tensor] = None,):
         query = self._self_attn_blk(h_t)
@@ -81,8 +81,11 @@ class TSPTransformerDecoderLayer(nn.Module):
 class TSPTransformerDecoderLayerFinal(TSPTransformerDecoderLayer):
     def __init__(self, d_model, nhead, c=10) -> None:
         super().__init__(d_model, nhead)
-        self.in_proj = nn.Linear(in_features=2 * d_model, out_features=2 * d_model)
+        self.in_proj_q = nn.Linear(in_features=d_model, out_features=d_model)
+        self.in_proj_k = nn.Linear(in_features=d_model, out_features=d_model)
+        self.in_proj_v = nn.Linear(in_features=d_model, out_features=d_model)
         self.c = c
+        self.nhead = nhead
 
     def forward(self, h_t: Tensor, memory: Tensor, node_mask: Tensor):
         # decoding step 1 -> positional encoding
@@ -90,14 +93,23 @@ class TSPTransformerDecoderLayerFinal(TSPTransformerDecoderLayer):
         query = self._self_attn_blk(h_t)
 
         # decoding step 3
-        out = self._query_attn_blk(query, memory, node_mask)
+        h_q = self._query_attn_blk(query, memory, node_mask)
         
         # decodinig step 4 
-        q, k = self.in_proj(torch.cat((out, memory), dim=-1)).chunk(2, dim=-1)
+        q, k = self.in_proj_q(h_q), self.in_proj_k(memory)
+        bsz, tgt_len, embd_dim = query.shape
+        _, src_len, _ = memory.shape
+        head_dim = embd_dim // self.nhead
+        q = q.contiguous().view(tgt_len, bsz * self.nhead, head_dim).transpose(0, 1)
+        k = k.contiguous().view(src_len, bsz * self.nhead, head_dim).transpose(0, 1)
         q = q / math.sqrt(self.d_model)
-        attn = torch.bmm(q, k)
-        attn += node_mask
+        attn = torch.bmm(q, k.transpose(-2, -1))
+        if self.nhead > 1:
+            node_mask = torch.repeat_interleave(node_mask, repeats=self.nhead, dim=0)
+        node_mask = node_mask.unsqueeze(1)
+        attn = attn + node_mask
         probs = F.softmax(self.c * torch.tanh(attn))
+        probs = probs.transpose(0, 1).contiguous().view(bsz, self.nhead, src_len).mean(1)
         return probs
 
 
@@ -137,6 +149,7 @@ class TSPTransformer(nn.Module):
         enc_norm = LayerNorm(d_model)
         self.encoder = TransformerEncoder(encoder_layer, num_encoder_layers, enc_norm)
         self.decoder = TSPTransformerDecoder(d_model, nhead, dim_feedforward, dropout_p, num_decoder_layers, c)
+        self.d_model = d_model
 
 
     def encode(self, src):
@@ -153,7 +166,7 @@ class TSPTransformer(nn.Module):
         h_start = memory[zero_to_bsz, idx_start_placeholder].view(bsz, 1, -1) + pe[:, 0]
         
         # initialize mask of visited cities
-        visited_node_mask = torch.zeros(bsz, nodes + 1, device=memory.device)
+        visited_node_mask = torch.zeros(bsz, nodes, device=memory.device)
         visited_node_mask[zero_to_bsz, idx_start_placeholder] = float("-inf")
 
         # list that will contain Long tensors of shape (bsz,) that gives the idx of the cities chosen at time t
@@ -161,7 +174,7 @@ class TSPTransformer(nn.Module):
 
         # construct tour recursively
         h_t = h_start
-        for t in range(nodes):
+        for t in range(nodes - 1):
             
             # compute probability over the next node in the tour
             prob_next_node = self.decoder(h_t, memory, node_mask=visited_node_mask) # size(prob_next_node)=(bsz, nodes+1)
@@ -170,12 +183,17 @@ class TSPTransformer(nn.Module):
             # choose node with highest probability
             idx = torch.argmax(prob_next_node, dim=1) # size(query)=(bsz,)
 
+            if (t == nodes - 1):
+                t = t
+                pass
             # update embedding of the current visited node
             h_t = memory[zero_to_bsz, idx] # size(h_start)=(bsz, dim_emb)
-            h_t = h_t + self.PE[t + 1].expand(bsz, self.dim_emb)
+            h_t = h_t + pe[:, max(t + 1, t)].expand(bsz, self.d_model)
+            h_t = h_t.unsqueeze(1)
             
             # update tour
             tours.append(idx)
+
 
             # update masks with visited nodes
             visited_node_mask = visited_node_mask.clone()
