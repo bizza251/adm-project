@@ -1,6 +1,7 @@
 import tsplib95
 import networkx as nx
 import numpy as np
+from utility import path_cost
 
 problem_path = ['ALL_tsp/bayg29.tsp']
 
@@ -10,6 +11,7 @@ n = 29
 dizs = []
 start = 1
 end = n + 1
+
 for i, problem in enumerate(problems):
     nodes = [i for i in range(start, end)]
     edges = [(i, j) for i in nodes for j in nodes if i != j]
@@ -23,14 +25,10 @@ for i, problem in enumerate(problems):
     for edge in edges:
         G[edge[0] - 1][edge[1] -1 ]["weight"] = subgraph[edge]
     path = tsp(G, cycle=True)
+    path = np.array(path) + 1
     cost = 0
-    for i in range(len(path)):
-        if (i + 1) == (len(path)):
-            break
-        cost += G[path[i]][path[i + 1]]["weight"]
-    print(f'path found {path} with total cost {cost}')
-
-    print('greedy')
+    cost = path_cost(path, subgraph)
+    print(f'NX algorithm: Path found {list(path)} with total cost {cost} and lenght {len(path)}')
 
     tour_greedy = []
     tour_greedy.append(nodes[0])
@@ -58,11 +56,6 @@ for i, problem in enumerate(problems):
     tour_greedy.append(nodes[0])
     print(tour_greedy, len(tour_greedy))
 
-    cost_greedy = 0
-    for i in range(len(tour_greedy) - 1):
-        try:
-            cost_greedy += subgraph[(tour_greedy[i],tour_greedy[i+1])]
-        except:
-            cost_greedy += subgraph[(tour_greedy[i], tour_greedy[0])]
-    print(cost_greedy)
-    print(np.unique(np.array(tour_greedy).shape))
+    cost_greedy = path_cost(tour_greedy, subgraph)  
+
+    print(f'Greedy algorithm: {tour_greedy} with cost {cost_greedy} and lenght {len(tour_greedy)}')
