@@ -10,10 +10,11 @@ def path_cost(path : list, weights : dict, cycle=True) -> int:
         int: final cost
     """
     cost = 0
-    if cycle:
-        for i in range(len(path) - 1):
-            try:
-                cost += weights[(path[i],path[i+1])]
-            except:
+    for i in range(len(path) - 1):
+        try:
+            cost += weights[(path[i],path[i+1])]
+        except:
+            if cycle:
                 cost += weights[(path[i], path[0])]
+                pass
     return cost

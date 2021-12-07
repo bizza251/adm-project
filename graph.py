@@ -25,10 +25,10 @@ class MyGraph(object):
         cost = 0
         if path is None:
             path = self.opt
-        if cycle:
-            for i in range(len(path) - 1):
-                try:
-                    cost += self.weights[(path[i],path[i+1])]
-                except:
+        for i in range(len(path) - 1):
+            try:
+                cost += self.weights[(path[i],path[i+1])]
+            except:
+                if cycle:
                     cost += self.weights[(path[i], path[0])]
         return cost
