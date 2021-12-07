@@ -254,5 +254,6 @@ if __name__ == '__main__':
     model = TSPTransformer()
     graph = torch.randint(low=int(-1e6), high=int(1e6 + 1), size=(3, 10, 2), dtype=torch.float32)
     out, sum_logits_node = model(graph)
+    sum_logits_node.sum().backward()
     print(out, sum_logits_node)
     assert sum_logits_node.grad_fn is not None
