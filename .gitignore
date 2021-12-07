@@ -137,3 +137,4 @@ H1_input_a.txt
 tsp_solver_gurobi.ipynb
 main.py
 .vscode
+mymodel.lp
