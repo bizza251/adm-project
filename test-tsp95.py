@@ -1,10 +1,10 @@
 import tsplib95
-import torch
 
-from torch.nn.modules.transformer import Transformer
+GRAPH_PATH = 'ALL_tsp/bayg29.tsp'
 
-GRAPH_PATH = 'ALL_tsp/fl3795.tsp'
+problem = tsplib95.load(GRAPH_PATH)
 
-problem = tsplib95.load(GRAPH_PATH) 
+opt = tsplib95.load('ALL_tsp/bayg29.opt.tour')
+print(problem.trace_tours(opt.tours))
 
 pass

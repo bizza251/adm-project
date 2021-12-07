@@ -5,11 +5,12 @@ import numpy as np
 import copy
 
 
-def solve(m):
+def solve(m, verbose = True):
     m.optimize()
     try:
-        print('Obj: %g' % m.objVal)
-        print_sol(m)
+        if verbose:
+            print('Obj: %g' % m.objVal)
+            print_sol(m, verbose)
     except:
         print('Model infeasible')
 
@@ -20,7 +21,6 @@ def print_sol(m):
     for v in m.getVars():
         if v.x != 0:
             print('%s %g' % (v.varName, v.x))
-
 
 if __name__ == '__main__':
     problem_path = ['ALL_tsp/a280.tsp']
@@ -62,9 +62,21 @@ if __name__ == '__main__':
             m.addConstr((x[j - 1] == 1) >> (quicksum(f[i, j] for i in range(start,
                         end) if (i, j) in a) == 1), name=f'visited_city__with_arc')
         # TODO aggiungere vincolo che da un dato nodo devo poter raggiungere tutti gli altri, attenzione anche che devo poter percorrerli al contrario
-        for arc in a:
-            if f[arc] == 1 and (arc[1], arc[0]) in a:
-                    f[arc[1],arc[0]] = 1
+        """
+        used_arcs = {}
+        if f[arc] == 1 
+            set used_arcs[arc[1], arc[0]] = 1
+            set used_arcs[arc] = 1
+        
+        for node in nodes:
+            for other_nodes in nodes:
+                other_nodes is reachable
+        """
+
+        
+
+        for i in range(start, end):
+            m.addConstr((x[i-1]))
 
         m.setObjective(quicksum(w[arc]*f[arc] for arc in a), GRB.MINIMIZE)
-        solve(m)
+        solve(m, verbose=False)
