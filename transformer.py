@@ -187,7 +187,9 @@ class TSPTransformer(nn.Module):
         memory, attn_weight = self.encoder(src)
         return memory, attn_weight
 
-    def decode(self, memory, visited_node_mask=None):
+    def decode(self, memory, visited_node_mask=None, gt_tours=None):
+        assert (self.training and gt_tours is not None) or not self.training, "Error: gt tours must be given during training"
+
         bsz, nodes = memory.shape[:2]
         zero_to_bsz = torch.arange(bsz)
         pe = self.pos_enc(torch.zeros(1, nodes + 1, 1)).to(memory.device)
@@ -198,7 +200,7 @@ class TSPTransformer(nn.Module):
         h_start_probs = torch.softmax(h_start_logits, dim=-1)
         idx_start_placeholder = torch.argmax(h_start_probs, dim=-1)
         h_start = memory[zero_to_bsz, idx_start_placeholder].view(bsz, 1, -1) + pe[:, 0]
-        sum_logits_node = [torch.log(h_start_logits[zero_to_bsz, idx_start_placeholder])]
+        diff_prob_node = [torch.abs(1 - h_start_probs[zero_to_bsz, gt_tours[:, 0]])]
         
         # initialize mask of visited cities
         visited_node_mask = torch.zeros(bsz, nodes, device=memory.device)
@@ -217,7 +219,7 @@ class TSPTransformer(nn.Module):
             
             # choose node with highest probability
             idx = torch.argmax(prob_next_node, dim=1) # size(query)=(bsz,)
-            sum_logits_node.append(torch.log(prob_next_node[zero_to_bsz, idx]))
+            diff_prob_node.append(torch.abs(1 - prob_next_node[zero_to_bsz, gt_tours[:, t + 1]]))
 
             # update embedding of the current visited node
             h_t = memory[zero_to_bsz, idx] # size(h_start)=(bsz, dim_emb)
@@ -240,20 +242,24 @@ class TSPTransformer(nn.Module):
         # close the tour
         tours = torch.cat((tours, tours[:, 0:1]), dim=-1)
 
-        sum_logits_node = torch.stack(sum_logits_node, dim=1).sum(1)
+        diff_prob_node = torch.stack(diff_prob_node).sum(0).mean()
         
-        return tours, sum_logits_node
+        return tours, diff_prob_node
 
-    def forward(self, x):
+    def forward(self, x, gt_tours=None):
         memory, _ = self.encode(x)
-        tour, sum_logits_node = self.decode(memory)
+        tour, sum_logits_node = self.decode(memory, gt_tours=gt_tours)
         return tour, sum_logits_node
         
 
 if __name__ == '__main__':
+    bsz, nodes, dim = 3, 10, 2
     model = TSPTransformer()
-    graph = torch.randint(low=int(-1e6), high=int(1e6 + 1), size=(3, 10, 2), dtype=torch.float32)
-    out, sum_logits_node = model(graph)
-    sum_logits_node.sum().backward()
-    print(out, sum_logits_node)
-    assert sum_logits_node.grad_fn is not None
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    graph = torch.randint(low=int(-1e6), high=int(1e6 + 1), size=(bsz, nodes, dim), dtype=torch.float32)
+    gt_tours = torch.randint(0, nodes - 1, (bsz, nodes))
+    out, diff_prob_node = model(graph, gt_tours)
+    diff_prob_node.sum().backward()
+    optimizer.step()
+    print(out, diff_prob_node)
+    assert diff_prob_node.grad_fn is not None
