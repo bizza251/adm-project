@@ -10,7 +10,7 @@ def solve(m, verbose = True):
     try:
         if verbose:
             print('Obj: %g' % m.objVal)
-            print_sol(m, verbose)
+            print_sol(m)
     except:
         print('Model infeasible')
 
@@ -19,8 +19,7 @@ def print_sol(m):
     print('---------------')
     print('Solution:')
     for v in m.getVars():
-        if v.x != 0:
-            print('%s %g' % (v.varName, v.x))
+        print('%s %g' % (v.varName, v.x))
 
 if __name__ == '__main__':
     problem_path = ['ALL_tsp/a280.tsp']
@@ -42,41 +41,49 @@ if __name__ == '__main__':
         a, w = multidict(diz)
         m = Model('TSP_solver'
                   )
-        x = m.addVars(n, vtype=GRB.BINARY, name='city visited')
-        f = {}
-        for arc in a:
-            f[arc] = m.addVar(vtype=GRB.BINARY, name=f'arc_{arc}_used')
-        # Devo visitare tutte le città
+        x = m.addVars(n, vtype=GRB.CONTINUOUS, name='city visited')
         for i in range(n):
-            m.addConstr(x[i] == 1, name=f'city_{i}_visited')
-        # Da una città posso andare solo in un'altra città
-        for i in range(start, end):
-            m.addConstr(quicksum(f[i, j] for j in range(start, end) if (
-                i, j) in a) == 1, name=f'only_one_out_arc')
-        # Posso arrivare in una città solo da una città
-        for j in range(start, end):
-            m.addConstr(quicksum(f[i, j] for i in range(start, end) if (
-                i, j) in a) == 1, name=f'only_one_in_arc')
-        # Se visito una città devo arrivarci da un qualche posto
-        for j in range(start, end):
-            m.addConstr((x[j - 1] == 1) >> (quicksum(f[i, j] for i in range(start,
-                        end) if (i, j) in a) == 1), name=f'visited_city__with_arc')
-        # TODO aggiungere vincolo che da un dato nodo devo poter raggiungere tutti gli altri, attenzione anche che devo poter percorrerli al contrario
-        """
-        used_arcs = {}
-        if f[arc] == 1 
-            set used_arcs[arc[1], arc[0]] = 1
-            set used_arcs[arc] = 1
-        
-        for node in nodes:
-            for other_nodes in nodes:
-                other_nodes is reachable
-        """
+            x[i] == 0
+        arc_used = {}
+        for arc in a:
+            arc_used[arc] = m.addVar(vtype=GRB.CONTINUOUS, name=f'arc_{arc}_used')
+            arc_used[arc] = 0
+        flow_in = m.addVars(n, vtype=GRB.CONTINUOUS, name='flow_in')
+        for i in range(n):
+            flow_in[n] = 0
+        flow_in[0] = 1
 
+        #Must visit all edges
+        m.addConstr(quicksum(flow_in) == n + 1)
+        for i in range(n - 1):
+            m.addConstr(flow_in[i] <= 1)
+        m.addConstr(flow_in[0] == 2)
+        #Flow is transferred in only one edge
+        for i in range(start, end):
+            m.addConstr(quicksum(arc_used[i, j] for j in range(start, end) if (i,j) in a) == (flow_in[i - 1]))
+
+        for j in range(start, end):
+            m.addConstr((quicksum(arc_used[i, j] for i in range(start, end) if (i,j) in a)) == (flow_in[j - 1]))
         
 
-        for i in range(start, end):
-            m.addConstr((x[i-1]))
 
-        m.setObjective(quicksum(w[arc]*f[arc] for arc in a), GRB.MINIMIZE)
-        solve(m, verbose=False)
+        #OBJECTIVE FUNCTION
+        m.setObjective(quicksum(w[arc]*arc_used[arc] for arc in a), GRB.MINIMIZE)
+        solve(m, verbose=True)
+
+
+        ## Devo visitare tutte le città
+        #for i in range(n):
+        #    m.addConstr(x[i] == 1, name=f'city_{i}_visited')
+        ## Da una città posso andare solo in un'altra città
+        #for i in range(start, end):
+        #    m.addConstr(quicksum(f[i, j] for j in range(start, end) if (
+        #        i, j) in a) == 1, name=f'only_one_out_arc')
+        ## Posso arrivare in una città solo da una città
+        #for j in range(start, end):
+        #    m.addConstr(quicksum(f[i, j] for i in range(start, end) if (
+        #        i, j) in a) == 1, name=f'only_one_in_arc')
+        ## Se visito una città devo arrivarci da un qualche posto
+        #for j in range(start, end):
+        #    m.addConstr((x[j - 1] == 1) >> (quicksum(f[i, j] for i in range(start,
+        #                end) if (i, j) in a) == 1), name=f'visited_city__with_arc')
