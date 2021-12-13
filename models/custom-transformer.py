@@ -85,7 +85,7 @@ class CustomMHA(nn.Module):
 
     def forward(self, query: Tensor, key: Tensor, value: Tensor, need_weights: bool = True, attn_mask: Optional[Tensor] = None, *args, **kwargs):
         k, v = self.key_proj(key), self.value_proj(value)
-        out, attn = custom_multi_head_attn(query, key, value, self.in_proj_weight, self.in_proj_bias,
+        out, attn = custom_multi_head_attn(query, k, v, self.in_proj_weight, self.in_proj_bias,
          self.out_proj_weight, self.out_proj_bias, self.nhead, attn_mask,
             self.dropout_p, self.training) 
         if need_weights:
@@ -180,7 +180,10 @@ if __name__ == '__main__':
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     graph = torch.randint(low=int(-1e6), high=int(1e6 + 1), size=(bsz, nodes, dim), dtype=torch.float32)
     gt_tour = torch.randint(0, nodes - 1, (bsz, nodes))
-    out, attn_matrix = model(graph)
+    mask = torch.zeros(nodes, nodes)
+    mask[0, :4] = float('-Inf')
+    mask[0, 5:] = float('-Inf')
+    out, attn_matrix = model(graph, mask)
     loss = TourLoss()
     l = loss(attn_matrix, gt_tour)
     l.backward()
