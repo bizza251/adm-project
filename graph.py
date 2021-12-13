@@ -1,3 +1,5 @@
+import torch
+
 class MyGraph(object):
     def __init__(self, name : str = None, nodes : list = None, weights : dict = None, opt : list = None, sub_opt : list = None) -> None:
         if name is not None:
@@ -32,3 +34,12 @@ class MyGraph(object):
                 if cycle:
                     cost += self.weights[(path[i], path[0])]
         return cost
+    
+    @property
+    def get_opt(self):
+        return torch.tensor(self.opt)
+    
+    @property
+    def get_sub_opt(self):
+        return torch.tensor(self.sub_opt)
+    

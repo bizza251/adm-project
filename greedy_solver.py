@@ -1,4 +1,3 @@
-from re import sub
 import tsplib95
 import networkx as nx
 import numpy as np
@@ -6,15 +5,17 @@ from utility import path_cost
 from graph import MyGraph
 
 problem_path = ['ALL_tsp/bayg29.tsp']
+min_n = 29 #just for testing: will be 50 or 100
 
 problems = [tsplib95.load(path) for path in problem_path]
-n = 29
 
-dizs = []
-start = 1
-end = n + 1
 
 for i, problem in enumerate(problems):
+    n = len(list(problem.get_nodes()))
+    if n < min_n:
+        continue
+    start = 1
+    end = n + 1
     nodes = [i for i in range(start, end)]
     edges = [(i, j) for i in nodes for j in nodes if i != j]
     subgraph = {edge: problem.get_weight(
@@ -43,7 +44,6 @@ for i, problem in enumerate(problems):
             if edge[0] == cur_node:
                 cur_edges.append(edge[1])
                 cur_weights.append(subgraph[edge])
-                #print(f'{edge} weight {subgraph[edge]}')
         cur_edges = np.array(cur_edges)
         cur_weights = np.array(cur_weights)
         node = None
@@ -61,7 +61,7 @@ for i, problem in enumerate(problems):
     cost_greedy = path_cost(tour_greedy, subgraph)  
 
     print(f'Greedy algorithm: {tour_greedy} with cost {cost_greedy} and lenght {len(tour_greedy)}')
-
-    my_g = MyGraph(problem_path[i], nodes = nodes, weights = subgraph, sub_opt = tour_greedy)
-    print(my_g.path_cost(my_g.sub_opt))
-    print(my_g.name)
+    if __name__ == '__main__':
+        my_g = MyGraph(problem_path[i], nodes = nodes, weights = subgraph, sub_opt = tour_greedy)
+        print(my_g.path_cost(my_g.sub_opt))
+        print(my_g.get_sub_opt)
