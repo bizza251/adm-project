@@ -5,9 +5,7 @@ from torch.functional import Tensor
 from torch.nn.modules.dropout import Dropout
 from torch.nn.modules.linear import Linear
 from torch.nn.modules.normalization import LayerNorm
-from torch.nn.modules.transformer import TransformerEncoder
-from activation import MHA, multi_head_attn
-from constants import DECODER_LAYERS, ENCODER_D_MODEL, ENCODER_LAYERS
+from activation import MHA
 import math
 import torch.nn.functional as F
 

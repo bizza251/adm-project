@@ -5,13 +5,10 @@ from torch.functional import Tensor
 from torch.nn.modules.dropout import Dropout
 from torch.nn.modules.linear import Linear
 from torch.nn.modules.normalization import LayerNorm
-from torch.nn.modules.transformer import TransformerEncoder
-from activation import MHA, multi_head_attn
-from constants import DECODER_LAYERS, ENCODER_D_MODEL, ENCODER_LAYERS
-import math
 import torch.nn.functional as F
-from torch.nn.functional import _in_projection_packed, dropout, linear, softmax
-torch.nn.Transformer
+from torch.nn.functional import dropout, linear, softmax
+from utility import TourLoss
+
 
 class CustomPositionalEncoding(nn.Module):
 
@@ -163,7 +160,7 @@ class TSPCustomTransformer(nn.Module):
         memory, attn_weight = self.encoder(query, src, attn_mask)
         return memory, attn_weight
 
-    def forward(self, x, attn_mask=None, gt_tour=None):
+    def forward(self, x, attn_mask=None):
         _, attn_matrix = self.encode(x, attn_mask)
         bsz, nodes = x.shape[:2]
         tour = torch.empty((bsz, nodes))
@@ -171,9 +168,7 @@ class TSPCustomTransformer(nn.Module):
         idx = torch.argmax(attn_matrix, dim=2)
         tour = torch.gather(node_idx, 1, idx)
         tour = torch.cat((tour, tour[:, 0:1]), dim=1)
-        loss = torch.mean(torch.sum(1 - torch.gather(attn_matrix, 2, gt_tour.unsqueeze(2)).squeeze(), dim=-1))
-        # TODO: loss computation may be moved outside the model
-        return tour, loss
+        return tour, attn_matrix
         
 
 if __name__ == '__main__':
@@ -185,8 +180,10 @@ if __name__ == '__main__':
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     graph = torch.randint(low=int(-1e6), high=int(1e6 + 1), size=(bsz, nodes, dim), dtype=torch.float32)
     gt_tour = torch.randint(0, nodes - 1, (bsz, nodes))
-    out, loss = model(graph, gt_tour=gt_tour)
-    loss.sum().backward()
+    out, attn_matrix = model(graph)
+    loss = TourLoss()
+    l = loss(attn_matrix, gt_tour)
+    l.backward()
     optimizer.step()
-    print(out, loss)
-    assert loss.grad_fn is not None
+    print(out, l)
+    assert l.grad_fn is not None
