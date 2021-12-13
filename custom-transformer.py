@@ -166,16 +166,14 @@ class TSPCustomTransformer(nn.Module):
     def forward(self, x, attn_mask=None, gt_tour=None):
         _, attn_matrix = self.encode(x, attn_mask)
         bsz, nodes = x.shape[:2]
-        zero_to_bsz = torch.arange(bsz)
         tour = torch.empty((bsz, nodes))
-        loss = torch.zeros((bsz))
-        indexes = torch.arange(nodes).expand(bsz, -1)
-        for i in range(nodes):
-            idx = torch.argmax(attn_matrix[:, i], dim=-1)
-            tour[:, i] = indexes[zero_to_bsz, idx]
-            loss += (1 - attn_matrix[zero_to_bsz, i, gt_tour[zero_to_bsz, i]])
+        node_idx = torch.arange(nodes).expand(bsz, -1)
+        idx = torch.argmax(attn_matrix, dim=2)
+        tour = torch.gather(node_idx, 1, idx)
         tour = torch.cat((tour, tour[:, 0:1]), dim=1)
-        return tour, loss.mean()
+        loss = torch.mean(torch.sum(1 - torch.gather(attn_matrix, 2, gt_tour.unsqueeze(2)).squeeze(), dim=-1))
+        # TODO: loss computation may be moved outside the model
+        return tour, loss
         
 
 if __name__ == '__main__':
