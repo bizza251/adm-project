@@ -3,7 +3,7 @@ import networkx as nx
 import numpy as np
 from utility import path_cost
 from graph import MyGraph
-
+from two_three_opt import _2opt, _3opt
 problem_path = ['ALL_tsp/bayg29.tsp']
 min_n = 29 #just for testing: will be 50 or 100
 
@@ -63,5 +63,7 @@ for i, problem in enumerate(problems):
     print(f'Greedy algorithm: {tour_greedy} with cost {cost_greedy} and lenght {len(tour_greedy)}')
     if __name__ == '__main__':
         my_g = MyGraph(problem_path[i], nodes = nodes, weights = subgraph, sub_opt = tour_greedy)
+        new_tour, len = _2opt(my_g)
+        new_tour, len = _3opt(my_g)
         print(my_g.path_cost(my_g.sub_opt))
         print(my_g.get_sub_opt)
