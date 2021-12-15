@@ -153,7 +153,7 @@ class TSPCustomTransformer(nn.Module):
             idx = torch.argmax(attn_matrix, dim=2)
             tour = torch.gather(node_idx, 1, idx)
         else:
-            # build tour using hard permutation matrix with hungarian algorithmù
+            # build tour using hard permutation matrix with hungarian algorithm
             for i in range(tour.shape[0]):
                 tour[i] = torch.tensor(linear_sum_assignment(-attn_matrix[i].detach().numpy())[1])
         tour = torch.cat((tour, tour[:, 0:1]), dim=1)
