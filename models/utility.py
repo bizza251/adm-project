@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+from torch.functional import Tensor
 
 
 class TourLoss(nn.Module):
