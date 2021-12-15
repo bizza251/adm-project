@@ -1,6 +1,4 @@
-from typing import Optional
 import torch
-from torch import nn
 from torch.functional import Tensor
 from torch.nn.functional import _in_projection_packed, dropout, linear, softmax
 import math
@@ -45,36 +43,21 @@ def multi_head_attn(
     return out, attn
 
 
-class MHA(nn.Module):
-    def __init__(self, embd_dim, nhead, dropout_p: float = 0.0) -> None:
-        super(MHA, self).__init__()
-        assert embd_dim % nhead == 0, "Embedding dimension must be divisible for the number of heads."
-        self. embd_dim = embd_dim
-        self.nhead = nhead
-        self.dropout_p = dropout_p
-        self.in_proj_weight = nn.parameter.Parameter(torch.empty((3 * embd_dim, embd_dim)))
-        self.in_proj_bias = nn.parameter.Parameter(torch.zeros((3 * embd_dim, )))
-        self.out_proj_weight = nn.parameter.Parameter(torch.empty((embd_dim, embd_dim)))
-        self.out_proj_bias = nn.parameter.Parameter(torch.zeros((embd_dim, )))
+def sinkhorn(x: Tensor, tau: float, i: int):
+    """Compute a soft permutation matrix using Sinkhorn algorithm.
 
-        nn.init.xavier_uniform_(self.in_proj_weight)
-        nn.init.xavier_uniform_(self.out_proj_weight)
+    Args:
+        x (Tensor): batch of squared matrices (N, L, L)
+        tau (float): temperature
+        i (int): number of iterations
 
-    def forward(self, query: Tensor, key: Tensor, value: Tensor, need_weights: bool = True, attn_mask: Optional[Tensor] = None, *args, **kwargs):
-        out, attn = multi_head_attn(query, key, value, self.in_proj_weight, self.in_proj_bias,
-         self.out_proj_weight, self.out_proj_bias, self.nhead, attn_mask,
-            self.dropout_p, self.training) 
-        if need_weights:
-            return out, attn
-        else:
-            return out
-
-
-if __name__ == '__main__':
-    bsz, src_len, embd_dim, nhead = 4, 100, 128, 4
-    mha = MHA(embd_dim, nhead, dropout_p=0.1)
-    src = torch.rand(bsz, src_len, embd_dim)
-    memory = torch.rand(bsz, 10, embd_dim)
-    out, attn_w = mha(src, memory, memory)
-    assert out.shape == src.shape
+    Returns:
+        [type]: [description]
+    """ 
+    
+    x = torch.exp(x / tau)
+    for _ in range(i):
+       x = x / (10e-8 + torch.sum(x, -2, keepdim=True))
+       x = x / (10e-8 + torch.sum(x, -1, keepdim=True))
+    return x
     
