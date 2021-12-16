@@ -7,7 +7,7 @@ from torch.nn.modules.linear import Linear
 from torch.nn.modules.normalization import LayerNorm
 import torch.nn.functional as F
 from torch.nn.functional import dropout, linear, softmax
-from utility import TourLoss
+from utility import TourLoss, get_node_mask
 
 
 class CustomPositionalEncoding(nn.Module):
@@ -172,9 +172,7 @@ if __name__ == '__main__':
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     graph = torch.randint(low=int(-1e6), high=int(1e6 + 1), size=(bsz, nodes, dim), dtype=torch.float32)
     gt_tour = torch.randint(0, nodes - 1, (bsz, nodes))
-    mask = torch.zeros(nodes, nodes)
-    mask[0, :4] = float('-Inf')
-    mask[0, 5:] = float('-Inf')
+    mask = get_node_mask(nodes, torch.tensor(([0, 4], [5, 5], [9, 1])))
     out, attn_matrix = model(graph, mask)
     loss = TourLoss()
     l = loss(attn_matrix, gt_tour)
