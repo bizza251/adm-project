@@ -46,6 +46,9 @@ class MyGraph(object):
         return torch.tensor(self.sub_opt)
 
     @property
-    def n_nodes(self):
+    def get_n_nodes(self):
         return len(self.nodes)
     
+    @property
+    def get_edges(self):
+        return torch.tensor(self.edges)
