@@ -4,6 +4,7 @@ import numpy as np
 from utility import path_cost
 from graph import MyGraph
 import os
+import torch
 from utility import read_file_from_directory
 
 
@@ -36,6 +37,11 @@ def problem_solver(path : str = os.path.join('.','ALL_tsp','Uncompressed'),  min
         subgraph = {edge: problem.get_weight(
             edge[0], edge[1]) for edge in edges}
 
+        coords = problem.node_coords
+        tmp = []
+        for i in range(50):
+            tmp.append(coords[i+1])
+        coords = torch.tensor(tmp)
 
         tsp = nx.approximation.traveling_salesman_problem
         G = nx.complete_graph(n)
@@ -75,13 +81,18 @@ def problem_solver(path : str = os.path.join('.','ALL_tsp','Uncompressed'),  min
         #if verbose: print(tour_greedy, len(tour_greedy))
         #cost_greedy = path_cost(tour_greedy, subgraph)  
         #if verbose: print(f'Greedy algorithm: {tour_greedy} with cost {cost_greedy} and lenght {len(tour_greedy)}')
-        try:
-            yield MyGraph(problem_path[problem.name + '.tsp'], nodes = nodes, weights = subgraph, sub_opt = path, sub_opt_cost = cost)
-        except:
-            continue
+        if problem.name.split('.')[-1] != 'tsp':
+            yield MyGraph(problem_path[problem.name + '.tsp'], nodes = nodes, coords = coords,weights = subgraph, sub_opt = path, sub_opt_cost = cost)
+        else: continue
             
 if __name__ == '__main__':
     p = problem_solver(verbose = False)
-    graphs = [g for g in p]
-    print(len(graphs))
+    g = next(p)
+    with open('test' + '.txt', 'w') as outfile:
+        outfile.write(str(g.__dict__))
+        #print(str(g.__dict__))
+        outfile.close()
+    with open('test' + '.txt', 'r') as infile:
+        tmp = infile.read()
+        print(tmp)
     pass
