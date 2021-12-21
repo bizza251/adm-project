@@ -7,7 +7,7 @@ import os
 from utility import read_file_from_directory
 
 
-def problem_solver(path : str = os.path.join('.','ALL_tsp'),  min_n : int = 50, verbose : bool = False):
+def problem_solver(path : str = os.path.join('.','ALL_tsp','Uncompressed'),  min_n : int = 50, verbose : bool = False):
     """Returns a generator of all the solved problems that satisfy the minumum number of edges.
 
 
@@ -42,6 +42,8 @@ def problem_solver(path : str = os.path.join('.','ALL_tsp'),  min_n : int = 50, 
         for edge in edges:
             G[edge[0] - 1][edge[1] -1 ]["weight"] = subgraph[edge]
         path = tsp(G, cycle=True)
+        if len(path) != min_n + 1:
+            continue
         path = np.array(path) + 1
         cost = 0
         cost = path_cost(path, subgraph)
@@ -72,10 +74,15 @@ def problem_solver(path : str = os.path.join('.','ALL_tsp'),  min_n : int = 50, 
         #if verbose: print(tour_greedy, len(tour_greedy))
         #cost_greedy = path_cost(tour_greedy, subgraph)  
         #if verbose: print(f'Greedy algorithm: {tour_greedy} with cost {cost_greedy} and lenght {len(tour_greedy)}')
-        
-        yield MyGraph(problem_path[problem.name + '.tsp'], nodes = nodes, weights = subgraph, sub_opt = path, sub_opt_cost = cost)
+        try:
+            yield MyGraph(problem_path[problem.name + '.tsp'], nodes = nodes, weights = subgraph, sub_opt = path, sub_opt_cost = cost)
+        except:
+            continue
             
 if __name__ == '__main__':
     p = problem_solver(verbose = False)
-    training_set = [g for g in p]
-    print(training_set)
+    graphs = [g for g in p]
+    print(len(graphs))
+    for graph in graphs:
+        print('lunghezza : {}'.format(len(graph.sub_opt)))
+    pass
