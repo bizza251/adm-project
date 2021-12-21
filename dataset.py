@@ -17,7 +17,7 @@ def gt_matrix_from_tour(tour: Tensor):
     bsz, n = tour.shape
     zero_to_bsz = torch.arange(tour.shape[0]).unsqueeze(1)
     matrix = torch.zeros(bsz, n, n)
-    matrix[zero_to_bsz, torch.arange(10), tour] = 1
+    matrix[zero_to_bsz, torch.arange(n), tour] = 1
     return matrix
 
 
