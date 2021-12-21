@@ -5,29 +5,10 @@ from torch.functional import Tensor
 from torch.nn.modules.dropout import Dropout
 from torch.nn.modules.linear import Linear
 from torch.nn.modules.normalization import LayerNorm
-from activation import MHA
+from layer import MHA
 import math
 import torch.nn.functional as F
-
-
-class PositionalEncoding(nn.Module):
-
-    def __init__(self, d_model: int, max_len: int = 5000):
-        super().__init__()
-
-        position = torch.arange(max_len).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
-        pe = torch.zeros(1, max_len, d_model)
-        pe[..., 0::2] = torch.sin(position * div_term)
-        pe[..., 1::2] = torch.cos(position * div_term)
-        self.register_buffer('pe', pe)
-
-    def forward(self, x: Tensor) -> Tensor:
-        """
-        Args:
-            x: Tensor, shape [batch_size, seq_len, embedding_dim]
-        """
-        return x + self.pe[:, :x.size(1)]
+from layer import PositionalEncoding
 
 
 class TSPTransformerEncoderLayer(nn.Module):
