@@ -1,7 +1,7 @@
 import torch
 
 class MyGraph(object):
-    def __init__(self, name : str = None, nodes : list = None, weights : dict = None, opt : list = None, sub_opt : list = None) -> None:
+    def __init__(self, name : str = None, nodes : list = None, weights : dict = None, opt : list = None, sub_opt : list = None, sub_opt_cost : float = None) -> None:
         if name is not None:
             self.name = name
         if nodes is not None:
@@ -13,6 +13,8 @@ class MyGraph(object):
             self.opt = opt
         if sub_opt is not None:
             self.sub_opt = sub_opt
+        if sub_opt_cost is not None:
+            self.sub_opt_cost = sub_opt_cost
 
     def path_cost(self, path : list = None, cycle=True) -> int:
         """Compute the cost of a given path

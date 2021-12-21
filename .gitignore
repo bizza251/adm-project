@@ -138,3 +138,4 @@ tsp_solver_gurobi.ipynb
 main.py
 .vscode
 mymodel.lp
+venv_adm.txt
