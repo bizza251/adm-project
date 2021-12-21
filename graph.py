@@ -52,3 +52,7 @@ class MyGraph(object):
     @property
     def get_edges(self):
         return torch.tensor(self.edges)
+    
+    @property
+    def get_nodes(self):
+        return torch.tensor(self.nodes)
