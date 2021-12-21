@@ -3,7 +3,7 @@ from typing import Optional
 import torch
 from torch import nn
 from torch.functional import Tensor
-from activation import multi_head_attn
+from models.activation import multi_head_attn
 
 
 class MHA(nn.Module):

@@ -7,11 +7,10 @@ from torch.nn.modules.linear import Linear
 from torch.nn.modules.normalization import LayerNorm
 import torch.nn.functional as F
 from torch.nn.functional import dropout, linear, softmax
-from activation import sinkhorn
-from layer import CustomPositionalEncoding
-from utility import TourLoss
+from models.activation import sinkhorn
+from models.layer import CustomPositionalEncoding
 from scipy.optimize import linear_sum_assignment
-from utility import TourLoss, get_node_mask
+from models.utility import TourLoss, get_node_mask
 
 
 class CustomPositionalEncoding(nn.Module):

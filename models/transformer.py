@@ -5,10 +5,10 @@ from torch.functional import Tensor
 from torch.nn.modules.dropout import Dropout
 from torch.nn.modules.linear import Linear
 from torch.nn.modules.normalization import LayerNorm
-from layer import MHA
+from models.layer import MHA
 import math
 import torch.nn.functional as F
-from layer import PositionalEncoding
+from models.layer import PositionalEncoding
 
 
 class TSPTransformerEncoderLayer(nn.Module):
