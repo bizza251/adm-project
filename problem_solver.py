@@ -25,6 +25,7 @@ def problem_solver(path : str = os.path.join('.','ALL_tsp','Uncompressed'),  min
     for i, problem in enumerate(problems):
         n = len(list(problem.get_nodes()))
         if n < min_n:
+            if verbose: print(f'Scarto perchè numero di nodi inferiore a {min_n}')
             continue
         else:
             n = min_n
@@ -83,6 +84,4 @@ if __name__ == '__main__':
     p = problem_solver(verbose = False)
     graphs = [g for g in p]
     print(len(graphs))
-    for graph in graphs:
-        print('lunghezza : {}'.format(len(graph.sub_opt)))
     pass
