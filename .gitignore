@@ -135,6 +135,6 @@ ALL_tsp
 .DS_Store
 H1_input_a.txt
 tsp_solver_gurobi.ipynb
-main.py
 .vscode
 mymodel.lp
+venv_adm.txt

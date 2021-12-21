@@ -11,6 +11,24 @@ from activation import sinkhorn
 from layer import CustomPositionalEncoding
 from utility import TourLoss
 from scipy.optimize import linear_sum_assignment
+from utility import TourLoss, get_node_mask
+
+
+class CustomPositionalEncoding(nn.Module):
+
+    def __init__(self, d_model: int):
+        super().__init__()
+
+        self.proj = nn.Linear(1, d_model)
+
+    def forward(self, x: Tensor) -> Tensor:
+        """
+        Args:
+            x: Tensor, shape [batch_size, seq_len, embedding_dim]
+        """
+        bsz, l = x.shape[:2]
+        idx = torch.arange(l, dtype=torch.float32).expand(bsz, -1).unsqueeze(-1)
+        return self.proj(idx)
 
 
 def custom_multi_head_attn(
@@ -170,9 +188,7 @@ if __name__ == '__main__':
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     graph = torch.randint(low=int(-1e6), high=int(1e6 + 1), size=(bsz, nodes, dim), dtype=torch.float32)
     gt_tour = torch.randint(0, nodes - 1, (bsz, nodes))
-    mask = torch.zeros(nodes, nodes)
-    mask[0, :4] = float('-Inf')
-    mask[0, 5:] = float('-Inf')
+    mask = get_node_mask(nodes, torch.tensor(([0, 4], [5, 5], [9, 1])))
     out, attn_matrix = model(graph, mask)
     loss = TourLoss()
     l = loss(attn_matrix, gt_tour)

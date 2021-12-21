@@ -18,3 +18,14 @@ def path_cost(path : list, weights : dict, cycle=True) -> int:
                 cost += weights[(path[i], path[0])]
                 pass
     return cost
+
+def read_file_from_directory(path, type = None, absolute=False):
+    import os
+    if not absolute:
+        filename = []
+        for file in os.listdir(path):
+            if type != None and file.split('.')[-1] == type:
+                filename.append(file)
+    else:
+        filename = {file : os.path.join(path, file) for file in os.listdir(path) if type != None and file.split('.')[-1] == type}
+    return filename
