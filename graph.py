@@ -1,11 +1,14 @@
 import torch
 
+
 class MyGraph(object):
-    def __init__(self, name : str = None, nodes : list = None, weights : dict = None, opt : list = None, sub_opt : list = None, sub_opt_cost : float = None) -> None:
+    def __init__(self, name : str = None, nodes : list = None, coords : torch.Tensor = None, weights : dict = None, opt : list = None, sub_opt : list = None, sub_opt_cost : float = None) -> None:
         if name is not None:
             self.name = name
         if nodes is not None:
             self.nodes = nodes
+        if coords is not None:
+            self.coords = coords
         if weights is not None:
             self.edges = [k for k in weights]
             self.weights = weights
