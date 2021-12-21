@@ -39,3 +39,11 @@ def read_file_from_directory(path, type = None, absolute=False):
     else:
         filename = {file : os.path.join(path, file) for file in os.listdir(path) if type != None and file.split('.')[-1] == type}
     return filename
+
+def create_dir(path):
+    import os
+    try:
+        os.mkdir(path)
+        print('Path created correctly')
+    except:
+        pass
