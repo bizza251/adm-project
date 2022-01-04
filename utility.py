@@ -12,12 +12,19 @@ def path_cost(path : list, weights : dict, cycle=True) -> int:
     cost = 0
     for i in range(len(path) - 1):
         try:
-            cost += weights[(path[i],path[i+1])]
+            if (path[i], path[i + 1]) in weights.keys():
+                cost += weights[(path[i],path[i+1])]
+            else:
+                cost += weights[(path[i + 1],path[i])]
         except:
             if cycle:
-                cost += weights[(path[i], path[0])]
+                if (path[i], path[0]) in weights.keys():
+                    cost += weights[(path[i], path[0])]
+                else:
+                    cost += weights[(path[0], path[i])]
                 pass
     return cost
+
 
 def read_file_from_directory(path, type = None, absolute=False):
     """Return all files from the given directory

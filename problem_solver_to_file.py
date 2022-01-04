@@ -36,7 +36,7 @@ def problem_solver_to_file(path : str = os.path.join('.','ALL_tsp','Uncompressed
         edges = [(i, j) for i in nodes for j in nodes if i != j]
         subgraph = {edge: problem.get_weight(
             edge[0], edge[1]) for edge in edges}
-
+        print(len(subgraph))
         try:
             coords = problem.node_coords
             tmp = []
