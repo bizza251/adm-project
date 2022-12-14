@@ -2,7 +2,18 @@ import torch
 from torch.functional import Tensor
 from problem_solver import problem_solver
 from models.custom_transformer import TSPCustomTransformer
+from math import ceil, floor
 
+
+def split_data(data, train_p, val_p, test_p):
+    assert train_p + val_p + test_p + 1e-8 >= 1, "Percentages must sum to 1"
+    n = len(data)
+    train_n = ceil(n * train_p)
+    val_n = floor(n * val_p)
+    train, val, test = data[:train_n], data[train_n:train_n + val_n], data[val_n:]
+    assert len(train) + len(val) + len(test) == n, "Error in splitting"
+    return train, val, test
+    
 
 class GraphDataset(torch.utils.data.IterableDataset):
     def __init__(self):
