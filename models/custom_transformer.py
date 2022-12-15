@@ -250,6 +250,8 @@ class TSPCustomTransformer(nn.Module):
         elif positional_encoding == 'custom_sin':
             self.pos_enc = CustomSinPositionalEncoding(d_model)
         self.input_ff = nn.Linear(in_features=in_features, out_features=d_model)
+        self.input_norm = nn.LayerNorm(d_model, layer_norm_eps)
+        self.pos_enc_norm = nn.LayerNorm(d_model, layer_norm_eps)
         self.encoder = TSPCustomEncoder(
             d_model, 
             nhead, 
@@ -283,8 +285,8 @@ class TSPCustomTransformer(nn.Module):
 
 
     def encode(self, src, attn_mask=None):
-        src = self.input_ff(src)
-        query = self.pos_enc(src)
+        src = self.input_norm(self.input_ff(src))
+        query = self.pos_enc_norm(self.pos_enc(src))
         memory, attn_weight = self.encoder(query, src, attn_mask)
         memory, attn_weight = self.out_encoder_layer(query, memory, attn_mask)
         return memory, attn_weight
