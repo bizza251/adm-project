@@ -31,7 +31,7 @@ class MHA(nn.Module):
             return out
 
 
-class PositionalEncoding(nn.Module):
+class SinPositionalEncoding(nn.Module):
 
     def __init__(self, d_model: int, max_len: int = 5000):
         super().__init__()
@@ -43,13 +43,29 @@ class PositionalEncoding(nn.Module):
         pe[..., 1::2] = torch.cos(position * div_term)
         self.register_buffer('pe', pe)
 
-    def forward(self, x: Tensor) -> Tensor:
+
+    def forward(self, x: Tensor, add_to_input: bool = True) -> Tensor:
         """
         Args:
             x: Tensor, shape [batch_size, seq_len, embedding_dim]
         """
-        return x + self.pe[:, :x.size(1)]
+        pe = self.pe[:, :x.size(1)]
+        if add_to_input:
+            return x + pe
+        else:
+            return pe
 
+
+
+class CustomSinPositionalEncoding(nn.Module):
+
+    def __init__(self, d_model: int, max_len: int = 5000):
+        super().__init__()
+        self.sin_pe = SinPositionalEncoding(d_model, max_len)
+        self.proj = nn.Linear(d_model, d_model)
+
+    def forward(self, x: Tensor):
+        return self.proj(self.sin_pe(x, False))
 
 
 class CustomPositionalEncoding(nn.Module):

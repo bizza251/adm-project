@@ -14,10 +14,11 @@ def train(loader, model, loss, optimizer, epochs):
             l.backward()
             optimizer.step()
 
+
 if __name__ == '__main__':
     dataset = GraphDataset()
     loader = torch.utils.data.DataLoader(dataset)
-    model = TSPCustomTransformer(nhead = 1)
+    model = TSPCustomTransformer(nhead = 4)
     loss = torch.nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     train(loader, model, loss, optimizer, 50)
