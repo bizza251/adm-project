@@ -132,11 +132,9 @@ class TSPCustomEncoderBlock(nn.Module):
         super().__init__()
 
         self.attn = CustomMHA(d_model, nhead, dropout_p, use_q_proj)
-        self.activation = activation
         self.norm = LayerNorm(d_model, layer_norm_eps)
-        self.dropout = Dropout(dropout_p)
         if use_feedforward_block:
-           self.ff_block = TransformerFeedforwardBlock(
+            self.ff_block = TransformerFeedforwardBlock(
             d_model,
             dim_feedforward,
             activation,
@@ -166,6 +164,7 @@ class TSPCustomEncoderLayer(nn.Module):
         norm_first=False,
         add_cross_attn=True,
         use_q_proj_ca=False,
+        use_feedforward_block_sa=False,
         use_feedforward_block_ca=True) -> None:
 
         super().__init__()
@@ -176,7 +175,9 @@ class TSPCustomEncoderLayer(nn.Module):
             dropout_p, 
             activation, 
             layer_norm_eps,
-            norm_first)
+            norm_first,
+            True,
+            use_feedforward_block_sa)
     
         self.add_cross_attn = add_cross_attn
         if add_cross_attn:
@@ -272,8 +273,8 @@ class TSPCustomTransformer(nn.Module):
             norm_first,
             True,
             use_q_proj_ca,
-            False
-        )
+            False,
+            False)
 
         self.d_model = d_model
         assert d_model % nhead == 0, "d_model must be divisible by nhead"
