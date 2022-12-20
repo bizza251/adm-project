@@ -286,6 +286,7 @@ class TSPCustomTransformer(nn.Module):
     def encode(self, src, attn_mask=None):
         src = self.input_ff(src)
         query = self.pos_enc(src)
+        query = query.expand(len(src), *query.shape[1:])
         memory, attn_weight = self.encoder(query, src, attn_mask)
         memory, attn_weight = self.out_encoder_layer(query, memory, attn_mask)
         return memory, attn_weight
