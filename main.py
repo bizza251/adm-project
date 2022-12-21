@@ -1,9 +1,47 @@
-from problem_solver import problem_solver
-import torch
-import numpy as np
-        
+from training import Trainer
+import argparse
+
+
+
 if __name__ == '__main__':
-    p = problem_solver()
-    graphs = [g for g in p]
-    mtx_edges = torch.stack([g.get_edges for g in graphs], dim=0)
-    print(mtx_edges.shape)
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('--do_train', action='store_true')
+    parser.add_argument('--do_eval', action='store_true')
+    parser.add_argument('--do_test', action='store_true')
+
+    # training args
+    parser.add_argument('--batch_size', type=int, default=16)
+    parser.add_argument('--optimizer', type=str, choices=['adam', 'sgd'], default='adam')
+    parser.add_argument('--learning_rate', type=float, default=1e-3)
+    parser.add_argument('--epochs', type=int, default=50)
+    parser.add_argument('--loss', type=str, choices=['mse'], default='mse')
+    parser.add_argument('--checkpoint_path', type=str, default=None)
+    parser.add_argument('--resume_from_checkpoint', type=str, default=None)
+    parser.add_argument('--train_dataset', type=str, default=None)
+    parser.add_argument('--eval_dataset', type=str, default=None)
+    parser.add_argument('--lr_scheduler', type=str, choices=['transformer'], default=None)
+    parser.add_argument('--warmup_steps', type=int, default=None)
+    parser.add_argument('--device', type=str, default='cpu')
+    
+    # model args
+    parser.add_argument('--in_features', type=int, default=2)
+    parser.add_argument('--d_model', type=int, default=128)
+    parser.add_argument('--nhead', type=int, default=4)
+    parser.add_argument('--dim_feedforward', type=int, default=1024)
+    parser.add_argument('--dropout_p', type=float, default=0.1)
+    parser.add_argument('--activation', type=str, choices=['relu'], default='relu')
+    parser.add_argument('--layer_norm_eps', type=float, default=1e-5)
+    parser.add_argument('--norm_first', type=bool, default=False)
+    parser.add_argument('--num_hidden_encoder_layers', type=int, default=2)
+    parser.add_argument('--sinkhorn_tau', type=float, default=5e-2)
+    parser.add_argument('--sinkhorn_i', type=int, default=20)
+    parser.add_argument('--add_cross_attn', type=bool, default=True)
+    parser.add_argument('--use_q_proj_ca', type=bool, default=False)
+    parser.add_argument('--positional_encoding', type=str, choices=['custom_sin', 'custom'], default='custom_sin')
+
+    args = parser.parse_args()
+
+    if args.do_train:
+        trainer = Trainer.from_args(args)
+        train_result = trainer.do_train()
