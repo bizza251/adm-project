@@ -139,3 +139,5 @@ tsp_solver_gurobi.ipynb
 mymodel.lp
 venv_adm.txt
 test.txt
+checkpoints/*
+*.pt
