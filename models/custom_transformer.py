@@ -285,6 +285,28 @@ class TSPCustomTransformer(nn.Module):
         self.sinkhorn_i = sinkhorn_i
 
 
+    @classmethod
+    def from_args(cls, args):
+        activation_str = getattr(args, 'activation', 'relu')
+        if activation_str == 'relu':
+            activation = F.relu
+        return cls(
+            in_features=args.in_features,
+            d_model=args.d_model, 
+            nhead=args.nhead,
+            dim_feedforward=args.dim_feedforward,
+            dropout_p=args.dropout_p,
+            activation=activation,
+            layer_norm_eps=args.layer_norm_eps,
+            norm_first=args.norm_first,
+            num_hidden_encoder_layers=args.num_hidden_encoder_layers,
+            sinkhorn_tau=args.sinkhorn_tau,
+            sinkhorn_i=args.sinkhorn_i,
+            add_cross_attn=args.add_cross_attn,
+            use_q_proj_ca=args.use_q_proj_ca,
+            positional_encoding=args.positional_encoding)
+
+
     def encode(self, src, attn_mask=None):
         src = self.input_ff(src)
         query = self.pos_enc(src)
