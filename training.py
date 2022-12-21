@@ -1,3 +1,4 @@
+import pathlib
 import torch
 from dataset import GraphDataset, gt_matrix_from_tour
 from models.custom_transformer import TSPCustomTransformer
@@ -5,6 +6,8 @@ import logging
 from tqdm import tqdm
 from torch.optim import Adam, SGD
 import torch.nn  as nn
+import os
+
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -79,19 +82,31 @@ def train(loader, model, loss, optimizer, epochs):
 def load_checkpoint(path, **kwargs):
     checkpoint = torch.load(path)
     out = {}
-    for key, obj in kwargs.items():
-        if key in checkpoint:
-            if hasattr(obj, 'load_state_dict'):
-                obj.load_state_dict(checkpoint[key])
+    for key, obj in checkpoint.items():
+        if key in kwargs:
+            if hasattr(kwargs[key], 'load_state_dict'):
+                kwargs[key].load_state_dict(obj)
             else:
-                out[key] = checkpoint[key]
+                out[key] = obj
         else:
+            out[key] = obj
             logger.warning(f"`{key}` not found in checkpoint `{path}`.")
     return out
 
 
 
 class Trainer:
+
+    exclude_from_checkpoint = {
+        'train_dataloader',
+        'save_epochs',
+        'epochs',
+        'eval_dataloader',
+        'checkpoint_dir',
+        'metrics',
+        'loss',
+        'device'
+    }
 
     def __init__(
         self,
@@ -102,10 +117,11 @@ class Trainer:
         epochs,
         eval_dataloader=None,
         scheduler=None,
-        checkpoint_path=None,
+        checkpoint_dir=None,
         resume_from_checkpoint=None,
         device='cpu',
         metrics=None,
+        save_epochs=5,
         *args,
         **kwargs
     ):
@@ -117,9 +133,13 @@ class Trainer:
         self.epochs = epochs
         self.eval_dataloader = eval_dataloader
         self.scheduler = scheduler
-        self.checkpoint_path = checkpoint_path
+        self.checkpoint_dir = checkpoint_dir
         self.device = device
         self.metrics = metrics
+        self.save_epochs = save_epochs
+
+        if checkpoint_dir:
+            pathlib.Path(checkpoint_dir).mkdir(parents=True, exist_ok=True) 
 
         self.best_loss = torch.inf
         self.best_metrics = {}
@@ -127,11 +147,14 @@ class Trainer:
 
         if resume_from_checkpoint:
             logger.info(f"Resuming from checkpoint `{resume_from_checkpoint}`...")
-            checkpoint_data = load_checkpoint(resume_from_checkpoint)
+            attrs = {k: v for k, v in vars(self).items() if k not in self.exclude_from_checkpoint}
+            checkpoint_data = load_checkpoint(resume_from_checkpoint, **attrs)
             if 'epoch' in checkpoint_data:
-                self.start_epoch = checkpoint_data['epoch']
-                del checkpoint_data['epoch']
-            for k, v in vars(self):
+                self.start_epoch = checkpoint_data['epoch'] + 1
+                checkpoint_data.pop('epoch', None)
+                checkpoint_data.pop('epochs', None)
+                checkpoint_data.pop('start_epoch', None)
+            for k, v in attrs.items():
                 if k in checkpoint_data:
                     setattr(self, k, checkpoint_data[k])
             logger.info("Checkpoint loaded!")
@@ -155,6 +178,19 @@ class Trainer:
             eval_dataloader,
             **kwargs)
 
+    
+    def save_checkpoint(self, epoch, is_best=False):
+        checkpoint = {'epoch': epoch}
+        for k, v in vars(self).items():
+            if k not in self.exclude_from_checkpoint:
+                try:
+                    checkpoint[k] = v.state_dict()
+                except AttributeError:
+                    checkpoint[k] = v
+        path = os.path.join(self.checkpoint_dir, f"checkpoint_{epoch}{'_best' if is_best else ''}.pt")
+        torch.save(checkpoint, path)
+        logger.info(f"Checkpoint for epoch {epoch} saved.")
+
 
     def train_step(self, batch):
         '''Change this method with MethodType to customize behavior.'''
@@ -168,6 +204,7 @@ class Trainer:
         tours, attn_matrices = self.model(coords)
         # model output, gt
         l = self.loss(attn_matrices, gt_matrices)
+        l.backward()
         self.optimizer.step()
         return l
 
@@ -195,22 +232,26 @@ class Trainer:
         for epoch in range(self.start_epoch, self.epochs):
             epoch_loss = 0
             n_samples = 0
-            # for i, batch in tqdm(enumerate(self.train_dataloader), desc=f"Epoch {epoch}/{self.epochs}"):
             for i, batch in enumerate(tqdm(self.train_dataloader, desc=f"Epoch {epoch}/{self.epochs}")):
                 step_loss = self.train_step(batch)
-                epoch_loss += step_loss
+                epoch_loss += step_loss.item()
                 n_samples += len(batch)
             
-            # TODO: log to tensorboard
             if n_samples:
+                # TODO: log to tensorboard
                 epoch_loss /= n_samples
                 logger.info(f"[epoch {epoch}] loss: {epoch_loss} | Min loss: {self.best_loss}")
                 if epoch_loss < self.best_loss:
                     logger.info(f"[epoch {epoch}] New min loss: {epoch_loss}")
                     self.best_loss = epoch_loss
+                    self.save_checkpoint(epoch, True)
 
             # TODO: run evaluation
             # TODO: save checkpoint
+            if epoch and epoch % self.save_epochs == 0:
+                self.save_checkpoint(epoch)
+        
+        self.save_checkpoint(epoch)
         logger.info("Training completed!")
 
 

@@ -16,13 +16,14 @@ if __name__ == '__main__':
     parser.add_argument('--learning_rate', type=float, default=1e-3)
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--loss', type=str, choices=['mse'], default='mse')
-    parser.add_argument('--checkpoint_path', type=str, default=None)
+    parser.add_argument('--checkpoint_dir', type=str, default=None)
     parser.add_argument('--resume_from_checkpoint', type=str, default=None)
     parser.add_argument('--train_dataset', type=str, default=None)
     parser.add_argument('--eval_dataset', type=str, default=None)
     parser.add_argument('--lr_scheduler', type=str, choices=['transformer'], default=None)
     parser.add_argument('--warmup_steps', type=int, default=None)
     parser.add_argument('--device', type=str, default='cpu')
+    parser.add_argument('--save_epochs', type=int, default=5)
     
     # model args
     parser.add_argument('--in_features', type=int, default=2)
