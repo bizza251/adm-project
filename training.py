@@ -193,7 +193,7 @@ class Trainer:
 
 
     def train_step(self, batch):
-        '''Change this method with MethodType to customize behavior.'''
+        '''Subclass or change this method with MethodType to customize behavior.'''
         n_nodes, coords, gt_tours, gt_lens = batch
         if coords.device != self.device:
             coords = coords.to(self.device)
@@ -206,11 +206,13 @@ class Trainer:
         l = self.loss(attn_matrices, gt_matrices)
         l.backward()
         self.optimizer.step()
+        if self.scheduler is not None:
+            self.scheduler.step()
         return l
 
     
     def eval_step(self, batch):
-        '''Change this method with MethodType to customize behavior.'''
+        '''Subclass or change this method with MethodType to customize behavior.'''
         n_nodes, coords, gt_tours, gt_lens = batch
         if coords.device != self.device:
             coords = coords.to(self.device)
