@@ -21,7 +21,9 @@ class GraphDataset(torch.utils.data.IterableDataset):
         self.g = problem_solver()
 
     def __iter__(self):
-        return ((graph.get_n_nodes, graph.coords, graph.get_sub_opt, graph.sub_opt_cost) for graph in self.g)
+        out  = ((graph.get_n_nodes, graph.coords, graph.get_sub_opt, graph.sub_opt_cost) for graph in self.g)
+        self.g = problem_solver()
+        return out
 
 
 def gt_matrix_from_tour(tour: Tensor):
