@@ -168,6 +168,7 @@ class Trainer:
         eval_dataloader = get_eval_dataloader(args)
         optimizer = get_optimizer(args, model)
         loss = get_loss(args)
+        scheduler = get_lr_scheduler(args, optimizer)
 
         return cls(
             model,
@@ -176,6 +177,7 @@ class Trainer:
             loss,
             args.epochs,
             eval_dataloader,
+            scheduler=scheduler,
             **kwargs)
 
     
@@ -297,10 +299,10 @@ def get_transformer_lr_scheduler(optim, d_model, warmup_steps):
     for group in optim.param_groups:
         group['lr'] = 1
     def lambda_lr(s):
-        d_model = d_model
+        d_model_ = d_model
         warm_up = warmup_steps
         s += 1
-        return (d_model ** -.5) * min(s ** -.5, s * warm_up ** -1.5)
+        return (d_model_ ** -.5) * min(s ** -.5, s * warm_up ** -1.5)
     return LambdaLR(optim, lambda_lr)
 
 def get_lr_scheduler(args, optim):
