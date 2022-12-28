@@ -6,7 +6,9 @@ import logging
 from tqdm import tqdm
 from torch.optim import Adam, SGD
 import torch.nn  as nn
+from torch.optim.lr_scheduler import LambdaLR
 import os
+
 
 
 logger = logging.getLogger(__name__)
@@ -185,16 +187,17 @@ class Trainer:
 
     
     def save_checkpoint(self, epoch, is_best=False):
-        checkpoint = {'epoch': epoch}
-        for k, v in vars(self).items():
-            if k not in self.exclude_from_checkpoint:
-                try:
-                    checkpoint[k] = v.state_dict()
-                except AttributeError:
-                    checkpoint[k] = v
-        path = os.path.join(self.checkpoint_dir, f"checkpoint_{epoch}{'_best' if is_best else ''}.pt")
-        torch.save(checkpoint, path)
-        logger.info(f"Checkpoint for epoch {epoch} saved.")
+        if self.checkpoint_dir:
+            checkpoint = {'epoch': epoch}
+            for k, v in vars(self).items():
+                if k not in self.exclude_from_checkpoint:
+                    try:
+                        checkpoint[k] = v.state_dict()
+                    except AttributeError:
+                        checkpoint[k] = v
+            path = os.path.join(self.checkpoint_dir, f"checkpoint_{epoch}{'_best' if is_best else ''}.pt")
+            torch.save(checkpoint, path)
+            logger.info(f"Checkpoint for epoch {epoch} saved.")
 
 
     def train_step(self, batch):
@@ -255,7 +258,10 @@ class Trainer:
             for i, batch in enumerate(tqdm(self.train_dataloader, desc=f"Epoch {epoch}/{self.epochs}")):
                 step_loss = self.train_step(batch)
                 epoch_loss += step_loss.item()
-                n_samples += len(batch)
+                if isinstance(batch, torch.Tensor):
+                    n_samples += len(batch)
+                else:
+                    n_samples += len(batch[0])
             
             if n_samples:
                 # TODO: log to tensorboard
@@ -276,7 +282,15 @@ class Trainer:
 
 
 
-from torch.optim.lr_scheduler import _LRScheduler, LambdaLR
+class ReinforceTrainer(Trainer):
+
+    def build_loss_input(self, batch, model_output):
+        tours, sum_log_probs = model_output
+        inputs = (sum_log_probs,)
+        coords, gt_len = batch[1], batch[3]
+        targets = (coords[torch.arange(len(tours)).view(-1, 1), tours], gt_len.to(sum_log_probs.device))
+        return inputs, targets
+
 
 
 def get_model(args):
