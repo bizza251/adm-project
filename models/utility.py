@@ -4,12 +4,42 @@ from torch import nn
 from torch.functional import Tensor
 
 
+
+def get_tour_len(tour: Tensor) -> Tensor:
+    """Compute the length of a batch of tours.
+
+    Args:
+        tour (Tensor): shape (N, L, D)
+
+    Returns:
+        Tensor: shape (N), contains the length of each tour in the batch.
+    """   
+    bsz, nodes, features = tour.shape 
+    diff = torch.diff(tour, dim=1, append=torch.zeros(bsz, 1, features))
+    return diff.square().sum(dim=-1).sqrt().sum(dim=-1)
+
+        
+
 class TourLoss(nn.Module):
     def __init__(self):
         super().__init__()
 
     def forward(self, attn_matrix, gt_tour):
         return torch.mean(torch.sum(1 - torch.gather(attn_matrix, 2, gt_tour.unsqueeze(2)).squeeze(), dim=-1))
+
+
+
+class TourLossReinforce(nn.Module):
+    
+    def forward(
+        self,
+        sum_log_probs: Tensor,
+        tour: Tensor,
+        gt_len: Tensor
+    ) -> Tensor:
+        tour_len = get_tour_len(tour)
+        return torch.mean((tour_len - gt_len) * sum_log_probs)
+
 
 
 def get_node_mask(n: int, to_mask: Iterable[Tensor]):

@@ -358,7 +358,7 @@ class TSPCustomTransformer(nn.Module):
         _, attn_matrix = self.encode(x, attn_mask)
         attn_matrix = sinkhorn(attn_matrix, self.sinkhorn_tau, self.sinkhorn_i)
         bsz, nodes = x.shape[:2]
-        tour = torch.empty((bsz, nodes))
+        tour = torch.empty((bsz, nodes), requires_grad=False)
         if self.training:
             # build tour using soft permutation matrix with sinkhorn algorithm
             node_idx = torch.arange(nodes).expand(bsz, -1)
@@ -468,12 +468,11 @@ class TSPTransformer(nn.Module):
         bsz, n_nodes, _ = x.shape
         zero2bsz = torch.arange(bsz)
         tour = torch.empty((bsz, n_nodes + 1), dtype=torch.long)
-        logits = torch.empty((bsz, n_nodes))
+        log_probs = torch.empty((bsz, n_nodes))
         visited_node_mask = torch.zeros((bsz, 1, n_nodes), dtype=x.dtype, device=x.device)
         key_value_cache = None
         for t in range(n_nodes - 1):
             if t > 0:
-                # query = torch.cat([query, key_value[zero2bsz, idxs].view(bsz, 1, -1)], dim=1)
                 query = key_value[zero2bsz, idxs].view(bsz, 1, -1)
             query_pe = query + self.PE[:, t]
             _, attn_weight, key_value_cache = self.decode(query_pe, key_value, visited_node_mask, key_value_cache=key_value_cache)
@@ -483,15 +482,14 @@ class TSPTransformer(nn.Module):
                 idxs = torch.argmax(attn_weight, dim=-1)
             idxs = idxs.view(-1)
             tour[:, t] = idxs
-            logits[:, t] = attn_weight[zero2bsz, :, idxs].view(-1)
+            log_probs[:, t] = attn_weight[zero2bsz, :, idxs].view(-1)
             visited_node_mask[zero2bsz, :, idxs] += -torch.inf
-            assert torch.all(torch.sum(visited_node_mask == -torch.inf, dim=-1).view(-1) == t + 1)
             if t == n_nodes - 2:
                 last_idxs = torch.nonzero(visited_node_mask == 0)[:, -1]
                 tour[:, t + 1] = last_idxs
                 tour[:, -1] = tour[:, 0]
-                logits[:, t + 1] = attn_weight[zero2bsz, :, last_idxs].view(-1)
-        return tour, logits
+                log_probs[:, t + 1] = attn_weight[zero2bsz, :, last_idxs].view(-1)
+        return tour, log_probs.sum(dim=-1)
 
 
 
