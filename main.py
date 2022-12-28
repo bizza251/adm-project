@@ -1,4 +1,4 @@
-from training import Trainer
+from training import Trainer, get_trainer
 import argparse
 
 
@@ -11,11 +11,12 @@ if __name__ == '__main__':
     parser.add_argument('--do_test', action='store_true')
 
     # training args
+    parser.add_argument('--train_mode', type=str, choices=['supervised', 'reinforce'])
     parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--optimizer', type=str, choices=['adam', 'sgd'], default='adam')
     parser.add_argument('--learning_rate', type=float, default=1e-3)
     parser.add_argument('--epochs', type=int, default=50)
-    parser.add_argument('--loss', type=str, choices=['mse'], default='mse')
+    parser.add_argument('--loss', type=str, choices=['mse', 'reinforce_loss'], default='mse')
     parser.add_argument('--checkpoint_dir', type=str, default=None)
     parser.add_argument('--resume_from_checkpoint', type=str, default=None)
     parser.add_argument('--train_dataset', type=str, default=None)
@@ -26,10 +27,11 @@ if __name__ == '__main__':
     parser.add_argument('--save_epochs', type=int, default=5)
     
     # model args
+    parser.add_argument('--model', type=str, choices=['custom', 'baseline'], default='custom')
     parser.add_argument('--in_features', type=int, default=2)
     parser.add_argument('--d_model', type=int, default=128)
     parser.add_argument('--nhead', type=int, default=4)
-    parser.add_argument('--dim_feedforward', type=int, default=1024)
+    parser.add_argument('--dim_feedforward', type=int, default=512)
     parser.add_argument('--dropout_p', type=float, default=0.1)
     parser.add_argument('--activation', type=str, choices=['relu'], default='relu')
     parser.add_argument('--layer_norm_eps', type=float, default=1e-5)
@@ -39,10 +41,13 @@ if __name__ == '__main__':
     parser.add_argument('--sinkhorn_i', type=int, default=20)
     parser.add_argument('--add_cross_attn', type=bool, default=True)
     parser.add_argument('--use_q_proj_ca', type=bool, default=False)
-    parser.add_argument('--positional_encoding', type=str, choices=['custom_sin', 'custom'], default='custom_sin')
+    parser.add_argument('--positional_encoding', type=str, choices=['sin', 'custom_sin', 'custom'], default='custom_sin')
+    # baseline
+    parser.add_argument('--num_encoder_layers', type=int, default=3)
+    parser.add_argument('--num_hidden_decoder_layers', type=int, default=2)
 
     args = parser.parse_args()
 
     if args.do_train:
-        trainer = Trainer.from_args(args)
+        trainer = get_trainer(args)
         train_result = trainer.do_train()

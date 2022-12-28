@@ -33,12 +33,12 @@ class TourLossReinforce(nn.Module):
     
     def forward(
         self,
-        sum_log_probs: Tensor,
+        sum_probs: Tensor,
         tour: Tensor,
         gt_len: Tensor
     ) -> Tensor:
         tour_len = get_tour_len(tour)
-        return torch.mean((tour_len - gt_len) * sum_log_probs)
+        return torch.mean((tour_len - gt_len) * torch.log(sum_probs))
 
 
 

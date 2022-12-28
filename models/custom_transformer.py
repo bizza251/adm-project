@@ -271,7 +271,7 @@ class TSPCustomTransformer(nn.Module):
         in_features=2,
         d_model=128, 
         nhead=4,
-        dim_feedforward=1024,
+        dim_feedforward=512,
         dropout_p=0.1,
         activation=F.relu,
         layer_norm_eps=1e-5,
@@ -281,7 +281,8 @@ class TSPCustomTransformer(nn.Module):
         sinkhorn_i=20,
         add_cross_attn=True,
         use_q_proj_ca=False,
-        positional_encoding='custom_sin') -> None:
+        positional_encoding='custom_sin',
+        **kwargs) -> None:
 
         super().__init__()
         self.pe = get_positional_encoding(positional_encoding, d_model)
@@ -325,9 +326,7 @@ class TSPCustomTransformer(nn.Module):
 
     @classmethod
     def from_args(cls, args):
-        activation_str = getattr(args, 'activation', 'relu')
-        if activation_str == 'relu':
-            activation = F.relu
+        activation = getattr(F, args.activation)
         return cls(
             in_features=args.in_features,
             d_model=args.d_model, 
@@ -369,27 +368,45 @@ class TSPCustomTransformer(nn.Module):
             for i in range(tour.shape[0]):
                 tour[i] = torch.tensor(linear_sum_assignment(-attn_matrix[i].detach().numpy())[1])
         tour = torch.cat((tour, tour[:, 0:1]), dim=1)
-        return tour.to(torch.int32), attn_matrix
+        return tour.to(torch.long), attn_matrix
         
 
 
 class TSPTransformer(nn.Module):
 
+    @classmethod
+    def from_args(cls, args):
+        activation = getattr(F, args.activation)
+        return cls(
+            in_features=args.in_features,
+            d_model=args.d_model, 
+            nhead=args.nhead,
+            dim_feedforward=args.dim_feedforward,
+            dropout_p=args.dropout_p,
+            activation=activation,
+            layer_norm_eps=args.layer_norm_eps,
+            norm_first=args.norm_first,
+            num_encoder_layers=args.num_encoder_layers,
+            num_decoder_layers=args.num_hidden_decoder_layers,
+            positional_encoding='sin')
+
+
     def __init__(self,
         in_features=2,
         d_model=128, 
         nhead=4,
-        dim_feedforward=1024,
+        dim_feedforward=512,
         dropout_p=0.1,
         activation=F.relu,
         layer_norm_eps=1e-5,
         norm_first=False,
         num_encoder_layers=3,
-        num_decoder_layers=None,
-        positional_encoding='sin') -> None:
+        num_hidden_decoder_layers=None,
+        positional_encoding='sin',
+        **kwargs) -> None:
 
         super().__init__()
-        num_decoder_layers = num_decoder_layers if num_decoder_layers is not None else num_encoder_layers - 1
+        num_decoder_layers = num_hidden_decoder_layers if num_hidden_decoder_layers is not None else num_encoder_layers - 1
         self.pe = get_positional_encoding(positional_encoding, d_model)
         self.input_ff = nn.Linear(in_features=in_features, out_features=d_model)
         self.encoder = nn.ModuleList([

@@ -1,13 +1,15 @@
 import pathlib
 import torch
 from dataset import GraphDataset, gt_matrix_from_tour
-from models.custom_transformer import TSPCustomTransformer
+from models.custom_transformer import TSPCustomTransformer, TSPTransformer
 import logging
 from tqdm import tqdm
 from torch.optim import Adam, SGD
 import torch.nn  as nn
 from torch.optim.lr_scheduler import LambdaLR
 import os
+
+from models.utility import TourLossReinforce
 
 
 
@@ -293,8 +295,27 @@ class ReinforceTrainer(Trainer):
 
 
 
+class CustomReinforceTrainer(Trainer):
+
+    def build_loss_input(self, batch, model_output):
+        tours, attn_matrix = model_output
+        sum_log_probs = torch.max(attn_matrix, dim=-1)[0].sum(dim=-1)
+        inputs = (sum_log_probs,)
+        coords, gt_len = batch[1], batch[3]
+        targets = (coords[torch.arange(len(tours)).view(-1, 1), tours], gt_len.to(sum_log_probs.device))
+        return inputs, targets
+
+
+
 def get_model(args):
-    return TSPCustomTransformer.from_args(args).to(args.device)
+    if args.model == 'custom':
+        model = TSPCustomTransformer.from_args(args)
+    elif args.model == 'baseline':
+        model = TSPTransformer.from_args(args)
+    else:
+        raise NotImplementedError()
+    return model.to(args.device)
+
 
 def get_optimizer(args, model):
     if args.optimizer == 'adam':
@@ -304,26 +325,34 @@ def get_optimizer(args, model):
     else:
         raise NotImplementedError()
 
+
 def get_train_dataset(args):
     return GraphDataset()
 
+
 def get_eval_dataset(args):
     return GraphDataset()
+
 
 def get_train_dataloader(args):
     dataset = get_train_dataset(args)
     return torch.utils.data.DataLoader(dataset, batch_size=args.batch_size)
 
+
 def get_train_dataloader(args):
     dataset = get_eval_dataset(args)
     return torch.utils.data.DataLoader(dataset, batch_size=args.batch_size)
 
+
 def get_loss(args):
     if args.loss == 'mse':
         loss = nn.MSELoss()
+    elif args.loss == 'reinforce_loss':
+        loss = TourLossReinforce()
     else:
         raise NotImplementedError()
     return loss.to(args.device)
+
 
 def get_transformer_lr_scheduler(optim, d_model, warmup_steps):
     for group in optim.param_groups:
@@ -335,11 +364,28 @@ def get_transformer_lr_scheduler(optim, d_model, warmup_steps):
         return (d_model_ ** -.5) * min(s ** -.5, s * warm_up ** -1.5)
     return LambdaLR(optim, lambda_lr)
 
+
 def get_lr_scheduler(args, optim):
     if args.lr_scheduler == 'transformer':
         return get_transformer_lr_scheduler(optim, args.d_model, args.warmup_steps)
     else:
         raise NotImplementedError()
+
+
+def get_trainer(args):
+    if args.train_mode == 'supervised':
+        if args.model != 'custom':
+            raise NotImplementedError()
+        else:
+            trainer = Trainer.from_args(args)
+    elif args.train_mode == 'reinforce':
+        if args.model == 'baseline':
+            trainer = ReinforceTrainer.from_args(args)
+        elif args.model == 'custom':
+            trainer = CustomReinforceTrainer.from_args(args)
+    else:
+        raise NotImplementedError()
+    return trainer
 
 
 if __name__ == '__main__':
