@@ -159,6 +159,9 @@ class Trainer:
                     setattr(self, k, checkpoint_data[k])
             logger.info("Checkpoint loaded!")
 
+        self.model.to(device)
+        self.loss.to(device)
+
     
     @classmethod
     def from_args(cls, args):
@@ -196,44 +199,57 @@ class Trainer:
 
     def train_step(self, batch):
         '''Subclass or change this method with MethodType to customize behavior.'''
-        n_nodes, coords, gt_tours, gt_lens = batch
-        if coords.device != self.device:
-            coords = coords.to(self.device)
-        if not torch.is_floating_point(coords):
-            coords = coords.to(torch.float32)
-        gt_matrices = gt_matrix_from_tour(gt_tours[..., :-1] - 1).to(self.device)
+        batch = self.process_batch(batch)
+        model_input = self.build_model_input(batch)
         self.optimizer.zero_grad()
-        tours, attn_matrices = self.model(coords)
+        model_output = self.model(model_input)
+        loss_inputs, loss_targets = self.build_loss_input(batch, model_output)
         # model output, gt
-        l = self.loss(attn_matrices, gt_matrices)
+        l = self.loss(*loss_inputs, *loss_targets)
         l.backward()
         self.optimizer.step()
         if self.scheduler is not None:
             self.scheduler.step()
         return l
 
-    
-    def eval_step(self, batch):
-        '''Subclass or change this method with MethodType to customize behavior.'''
+
+    def process_batch(self, batch):
         n_nodes, coords, gt_tours, gt_lens = batch
         if coords.device != self.device:
             coords = coords.to(self.device)
         if not torch.is_floating_point(coords):
             coords = coords.to(torch.float32)
-        gt_matrices = gt_matrix_from_tour(gt_tours[..., :-1] - 1).to(self.device)
-        tours, attn_matrices = self.model(coords)
-        l = self.loss(attn_matrices, gt_matrices)
+        return n_nodes, coords, gt_tours, gt_lens
+
+    
+    def build_model_input(self, batch):
+        return batch[1]
+
+    
+    def build_loss_input(self, batch, model_output):
+        inputs = (model_output[1],)
+        targets = (gt_matrix_from_tour(batch[2][..., :-1] - 1).to(self.device),)
+        return inputs, targets
+
+    
+    def eval_step(self, batch):
+        '''Subclass or change this method with MethodType to customize behavior.'''
+        batch = self.process_batch(batch)
+        model_input = self.build_model_input(batch)
+        model_output = self.model(model_input)
+        loss_inputs, loss_targets = self.build_loss_input(batch, model_output)
+        l = self.loss(*loss_inputs, *loss_targets)
         if self.metrics:
             metrics_results = {}
             for metric_name, metric_fun in self.metrics.items():
                 # model output, gt
-                metrics_results[metric_name] = metric_fun((tours, attn_matrices), (gt_matrices, gt_tours))
+                metrics_results[metric_name] = metric_fun(model_output, batch)
         return l, metrics_results
 
     
     def do_train(self):
-        self.model.train()
         for epoch in range(self.start_epoch, self.epochs):
+            self.model.train()
             epoch_loss = 0
             n_samples = 0
             for i, batch in enumerate(tqdm(self.train_dataloader, desc=f"Epoch {epoch}/{self.epochs}")):

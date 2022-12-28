@@ -468,7 +468,7 @@ class TSPTransformer(nn.Module):
         bsz, n_nodes, _ = x.shape
         zero2bsz = torch.arange(bsz)
         tour = torch.empty((bsz, n_nodes + 1), dtype=torch.long)
-        log_probs = torch.empty((bsz, n_nodes))
+        log_probs = torch.empty((bsz, n_nodes), device=x.device)
         visited_node_mask = torch.zeros((bsz, 1, n_nodes), dtype=x.dtype, device=x.device)
         key_value_cache = None
         for t in range(n_nodes - 1):

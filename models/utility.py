@@ -14,8 +14,8 @@ def get_tour_len(tour: Tensor) -> Tensor:
     Returns:
         Tensor: shape (N), contains the length of each tour in the batch.
     """   
-    bsz, nodes, features = tour.shape 
-    diff = torch.diff(tour, dim=1, append=torch.zeros(bsz, 1, features))
+    bsz, _, features = tour.shape 
+    diff = torch.diff(tour, dim=1, append=torch.zeros(bsz, 1, features, device=tour.device))
     return diff.square().sum(dim=-1).sqrt().sum(dim=-1)
 
         
