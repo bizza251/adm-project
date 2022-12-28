@@ -164,7 +164,6 @@ class TSPCustomEncoderLayer(nn.Module):
         d_model, 
         nhead, 
         dim_feedforward=1024, 
-        dropout_p=0.1, 
         activation=F.relu, 
         layer_norm_eps=1e-5,
         norm_first=False,
@@ -173,14 +172,16 @@ class TSPCustomEncoderLayer(nn.Module):
         use_feedforward_block_sa=False,
         use_feedforward_block_ca=True,
         use_q_residual_sa=True,
-        use_q_residual_ca=True) -> None:
+        use_q_residual_ca=True,
+        dropout_p_sa=0.1,
+        dropout_p_ca=0.1) -> None:
 
         super().__init__()
         self.encoder_block = TSPCustomEncoderBlock(
             d_model, 
             nhead, 
             dim_feedforward, 
-            dropout_p, 
+            dropout_p_sa, 
             activation, 
             layer_norm_eps,
             norm_first,
@@ -194,7 +195,7 @@ class TSPCustomEncoderLayer(nn.Module):
                 d_model, 
                 nhead, 
                 dim_feedforward, 
-                dropout_p, 
+                dropout_p_ca, 
                 activation, 
                 layer_norm_eps,
                 norm_first,
@@ -231,7 +232,6 @@ class TSPCustomEncoder(nn.Module):
                 d_model, 
                 nhead, 
                 dim_feedforward, 
-                dropout_p, 
                 activation, 
                 layer_norm_eps, 
                 norm_first,
@@ -240,7 +240,9 @@ class TSPCustomEncoder(nn.Module):
                 use_feedforward_block_sa=False,
                 use_feedforward_block_ca=True,
                 use_q_residual_sa=False,
-                use_q_residual_ca=False
+                use_q_residual_ca=False,
+                dropout_p_sa=dropout_p,
+                dropout_p_ca=dropout_p,
                 ) for _ in range(layers)])
     
 
@@ -291,7 +293,6 @@ class TSPCustomTransformer(nn.Module):
             d_model,
             1,
             dim_feedforward,
-            dropout_p,
             activation,
             layer_norm_eps,
             norm_first,
@@ -300,7 +301,9 @@ class TSPCustomTransformer(nn.Module):
             use_feedforward_block_sa=False,
             use_feedforward_block_ca=False,
             use_q_residual_sa=False,
-            use_q_residual_ca=False)
+            use_q_residual_ca=False,
+            dropout_p_sa=dropout_p,
+            dropout_p_ca=0.)
 
         self.d_model = d_model
         assert d_model % nhead == 0, "d_model must be divisible by nhead"
@@ -383,11 +386,12 @@ class TSPTransformer(nn.Module):
                 d_model,
                 nhead,
                 dim_feedforward,
-                dropout_p,
                 activation,
                 layer_norm_eps,
                 add_cross_attn=False,
-                use_feedforward_block_sa=True
+                use_feedforward_block_sa=True,
+                dropout_p_sa=dropout_p,
+                dropout_p_ca=dropout_p,
             )
             for _ in range(num_encoder_layers)
         ])
@@ -397,13 +401,14 @@ class TSPTransformer(nn.Module):
                 d_model,
                 nhead,
                 dim_feedforward,
-                dropout_p,
                 activation,
                 layer_norm_eps,
                 add_cross_attn=True,
                 use_q_proj_ca=True,
                 use_feedforward_block_sa=False,
-                use_feedforward_block_ca=True
+                use_feedforward_block_ca=True,
+                dropout_p_sa=dropout_p,
+                dropout_p_ca=dropout_p,
             )
             for _ in range(num_decoder_layers)
         ])   
@@ -412,13 +417,14 @@ class TSPTransformer(nn.Module):
                 d_model,
                 1,
                 None,
-                dropout_p,
                 activation,
                 layer_norm_eps,
                 add_cross_attn=True,
                 use_q_proj_ca=True,
                 use_feedforward_block_sa=False,
-                use_feedforward_block_ca=False
+                use_feedforward_block_ca=False,
+                dropout_p_sa=dropout_p,
+                dropout_p_ca=0.
             )
 
         self.start_node = nn.Parameter(torch.rand(d_model))
