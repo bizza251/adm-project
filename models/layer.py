@@ -84,6 +84,15 @@ class CustomPositionalEncoding(nn.Module):
         return self.proj(idx)
 
 
+def get_positional_encoding(positional_encoding: str, d_model: int, max_len: int = 5000, *args, **kwargs):
+    if positional_encoding == 'sin':
+        return SinPositionalEncoding(d_model, max_len)
+    elif positional_encoding == 'custom_sin':
+        return CustomSinPositionalEncoding(d_model, max_len)
+    elif positional_encoding == 'custom_sin':
+        return CustomPositionalEncoding(d_model)
+
+
 if __name__ == '__main__':
     bsz, src_len, embd_dim, nhead = 4, 100, 128, 4
     mha = MHA(embd_dim, nhead, dropout_p=0.1)
