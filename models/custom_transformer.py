@@ -86,20 +86,29 @@ class CustomMHA(nn.Module):
             self.out_proj_bias = None
 
 
-    def forward(self, query: Tensor, key: Tensor, value: Tensor, attn_mask: Optional[Tensor] = None, *args, **kwargs):
+    def forward(
+        self, 
+        query: Tensor, 
+        key: Tensor, 
+        value: Tensor, 
+        attn_mask: Optional[Tensor] = None, 
+        *args, 
+        **kwargs):
         if hasattr(self, 'qkv_proj'):
             qkv = self.qkv_proj(query)
             query, key, value = torch.split(qkv, self.embd_dim, -1)
         else:
             if hasattr(self, 'q_proj'):
                 query = self.q_proj(query)
-            if hasattr(self, 'kv_proj'):
+            if kwargs.get('cached_key_value', None):
+                key, value = kwargs['cached_key_value']
+            elif hasattr(self, 'kv_proj'):
                 kv = self.kv_proj(key)
                 key, value = torch.split(kv, self.embd_dim, -1)
             
         out, attn = custom_multi_head_attn(query, key, value, self.out_proj_weight, self.out_proj_bias, self.nhead, attn_mask,
             self.dropout_p, self.training) 
-        return out, attn
+        return out, attn, (key, value)
 
 
 
@@ -113,7 +122,7 @@ class TransformerFeedforwardBlock(nn.Module):
         self.norm = LayerNorm(d_model, layer_norm_eps)
         self.dropout = Dropout(dropout_p)
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor, **kwargs) -> Tensor:
         out = self.dropout(self.linear2(self.activation(self.linear1(x))))
         return self.norm(x + out)
 
@@ -149,13 +158,13 @@ class TSPCustomEncoderBlock(nn.Module):
         self.use_q_residual = use_q_residual    # True -> vanilla transformer; False -> ours
 
 
-    def forward(self, query: Tensor, key_value: Tensor, attn_mask: Tensor = None):
-        attn_out, attn_weight = self.attn(query, key_value, key_value, need_weights=True, attn_mask=attn_mask)
+    def forward(self, query: Tensor, key_value: Tensor, attn_mask: Tensor = None, **kwargs):
+        attn_out, attn_weight, cached_key_value = self.attn(query, key_value, key_value, need_weights=True, attn_mask=attn_mask, **kwargs)
         residual = query if self.use_q_residual else key_value
         out = self.norm(residual + attn_out)
         if self.use_feedforward_block:
-            out = self.ff_block(out)
-        return out, attn_weight
+            out = self.ff_block(out, **kwargs)
+        return out, attn_weight, cached_key_value
 
 
 
@@ -207,18 +216,20 @@ class TSPCustomEncoderLayer(nn.Module):
         self.use_q_residual = use_q_residual_sa and use_q_residual_ca
 
 
-    def forward(self, query: Tensor, key_value: Tensor, attn_mask: Tensor = None):
+    def forward(self, query: Tensor, key_value: Tensor, attn_mask: Tensor = None, **kwargs):
         if self.use_q_residual:
             # vanilla transformer: query comes from decoder; key_value from encoder
-            query, attn_weight = self.encoder_block(query, query, attn_mask=None)
+            query, attn_weight, _ = self.encoder_block(query, query, attn_mask=None, **kwargs)
             attn_out = query
         else:
             # our implementation: query is the pos encoding, key_value is the output of the self-attention
-            key_value, attn_weight = self.encoder_block(key_value, key_value, attn_mask=None)
+            key_value, attn_weight, _ = self.encoder_block(key_value, key_value, attn_mask=None, **kwargs)
             attn_out = key_value
         if self.add_cross_attn:
-            attn_out, attn_weight = self.encoder_block_ca(query, key_value, attn_mask)
-        return attn_out, attn_weight
+            attn_out, attn_weight, cached_key_value = self.encoder_block_ca(query, key_value, attn_mask, **kwargs)
+        else:
+            cached_key_value = None
+        return attn_out, attn_weight, cached_key_value
 
 
 
@@ -250,7 +261,7 @@ class TSPCustomEncoder(nn.Module):
         output, attn_weight = key_value, None
 
         for mod in self.layers:
-            output, attn_weight = mod(query, output, attn_mask)
+            output, attn_weight, _ = mod(query, output, attn_mask)
         
         return output, attn_weight
 
@@ -339,7 +350,7 @@ class TSPCustomTransformer(nn.Module):
         query = self.pe(key_value)
         query = query.expand(len(key_value), *query.shape[1:])
         memory, attn_weight = self.encoder(query, key_value, attn_mask)
-        memory, attn_weight = self.head(query, memory, attn_mask)
+        memory, attn_weight, _ = self.head(query, memory, attn_mask)
         return memory, attn_weight
 
 
@@ -433,15 +444,21 @@ class TSPTransformer(nn.Module):
     
     def encode(self, x):
         for layer in self.encoder:
-            x, _ = layer(x, x)
+            x, _, _ = layer(x, x)
         return x
 
 
-    def decode(self, query, key_value, mask=None):
-        for layer in self.decoder:
-            query, _ = layer(query, key_value, mask)
-        attn_out, attn_weight = self.head(query, key_value, mask)
-        return attn_out, attn_weight
+    def decode(self, query, key_value, mask=None, key_value_cache=None):
+        key_value_cache = key_value_cache if key_value_cache else []
+        use_cache = any(key_value_cache)
+        for i, layer in enumerate(self.decoder):
+            query, _, cached_key_value = layer(query, key_value, mask, cached_key_value=key_value_cache[i] if use_cache else None)
+            key_value_cache.append(cached_key_value)
+        last_cached_key_value = key_value_cache[-1] if use_cache else None
+        attn_out, attn_weight, cached_key_value = self.head(query, key_value, mask, cached_key_value=last_cached_key_value)
+        if not use_cache:
+            key_value_cache.append(cached_key_value)
+        return attn_out, attn_weight, key_value_cache
 
 
     def forward(self, x):
@@ -453,12 +470,13 @@ class TSPTransformer(nn.Module):
         tour = torch.empty((bsz, n_nodes + 1), dtype=torch.long)
         logits = torch.empty((bsz, n_nodes))
         visited_node_mask = torch.zeros((bsz, 1, n_nodes), dtype=x.dtype, device=x.device)
+        key_value_cache = None
         for t in range(n_nodes - 1):
             if t > 0:
                 # query = torch.cat([query, key_value[zero2bsz, idxs].view(bsz, 1, -1)], dim=1)
                 query = key_value[zero2bsz, idxs].view(bsz, 1, -1)
             query_pe = query + self.PE[:, t]
-            _, attn_weight = self.decode(query_pe, key_value, visited_node_mask)
+            _, attn_weight, key_value_cache = self.decode(query_pe, key_value, visited_node_mask, key_value_cache=key_value_cache)
             if self.training:
                 idxs = Categorical(probs=attn_weight).sample()
             else:
@@ -474,6 +492,7 @@ class TSPTransformer(nn.Module):
                 tour[:, -1] = tour[:, 0]
                 logits[:, t + 1] = attn_weight[zero2bsz, :, last_idxs].view(-1)
         return tour, logits
+
 
 
 if __name__ == '__main__':
