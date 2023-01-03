@@ -1,8 +1,12 @@
+import os
+from typing import Callable, Dict, Sequence, Tuple
 import torch
 from torch.functional import Tensor
 from problem_solver import problem_solver
 from models.custom_transformer import TSPCustomTransformer
 from math import ceil, floor
+
+from utility import BatchGraphInput
 
 
 def split_data(data, train_p, val_p, test_p):
@@ -21,7 +25,14 @@ class GraphDataset(torch.utils.data.IterableDataset):
         self.g = problem_solver()
 
     def __iter__(self):
-        out  = ((graph.get_n_nodes, graph.coords, graph.get_sub_opt, graph.sub_opt_cost) for graph in self.g)
+        # out  = ((graph.get_n_nodes, graph.coords, graph.get_sub_opt, graph.sub_opt_cost) for graph in self.g)
+        out = (
+            BatchGraphInput(
+                graph.coords,
+                graph.get_sub_opt,
+                graph.sub_opt_cost
+            ) for graph in self.g
+        )
         self.g = problem_solver()
         return out
 
@@ -32,6 +43,34 @@ def gt_matrix_from_tour(tour: Tensor):
     matrix = torch.zeros(bsz, n, n)
     matrix[zero_to_bsz, torch.arange(n), tour] = 1
     return matrix
+
+
+
+class RandomGraphDataset(torch.utils.data.IterableDataset):
+
+    def rewind(self):
+        self.g = (item for item in os.scandir(self.path) if item.is_file() and item.name.endswith('.pt'))
+
+
+    def __init__(
+        self,
+        path: str,
+        mapping_func: Callable[[Dict], BatchGraphInput] = None,
+    ):
+        self.path = path
+        if mapping_func is None:
+           self.mapping_func = lambda x: BatchGraphInput(*x.values())
+        else:
+            self.mapping_func = mapping_func
+
+        self.rewind()
+
+
+    def __iter__(self):
+        out = (self.mapping_func(torch.load(x.path)) for x in self.g)
+        self.rewind()
+        return out
+    
 
 
 if __name__ == '__main__':

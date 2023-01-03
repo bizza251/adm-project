@@ -1,3 +1,13 @@
+from typing import Sequence
+import numpy as np
+from scipy.spatial.distance import pdist
+import networkx as nx
+from torch import Tensor
+from dataclasses import dataclass
+import torch
+import os
+
+
 def path_cost(path : list, weights : dict, cycle=True) -> int:
     """Computes the cost of the given path
 
@@ -54,3 +64,104 @@ def create_dir(path):
         print('Path created correctly')
     except:
         pass
+
+
+
+def random_tsp_instance(n, features=2, max_norm=True, low=None, high=None):
+    if low is not None:
+        nodes = np.random.randint(low, high, (n, features))
+    else:
+        nodes = np.random.rand(n ,features)
+    if max_norm:
+        nodes /= np.absolute(nodes.max(axis=0))
+    G = nx.complete_graph(n)
+    edge_keys = [e for e in G.edges()]
+    nx.set_node_attributes(G, {k: v for k, v in zip(np.arange(n), nodes)}, 'pos')
+    nx.set_edge_attributes(G, {k: v for k, v in zip(edge_keys, pdist(nodes))}, 'dist')
+    return G, nodes
+
+
+def random_tsp_instance_solved(n, features=2, max_norm=True, low=None, high=None):
+    G, nodes = random_tsp_instance(n, features, max_norm, low, high)
+    tour = nx.approximation.traveling_salesman_problem(G, cycle=True)
+    length = 0
+    for i in range(n):
+        length += G[tour[i]][tour[i + 1]]['dist']
+    return G, nodes, tour, length
+
+
+
+def create_random_dataset(path, n, n_nodes, n_features, max_norm=True, n_processes=4):
+    from multiprocessing.pool import Pool
+    from multiprocessing import Value
+    import pathlib
+    from functools import partial
+    from uuid import uuid4
+    from sys import stdout
+    import ctypes
+    from random import random
+
+    pathlib.Path(path).mkdir(parents=True, exist_ok=True) 
+
+    completed = Value(ctypes.c_ulong, 0)
+
+    global save_sample
+    def save_sample(_, n_nodes, n_features, max_norm=True):
+        _, nodes, tour, length = random_tsp_instance_solved(n_nodes, n_features, max_norm)
+        torch.save(dict(
+            nodes=torch.tensor(nodes),
+            tour=torch.tensor(tour),
+            length=torch.tensor(length)
+        ),
+        os.path.join(path, f"{uuid4()}.pt"))
+        completed.value += 1
+        if random() > 0.99:
+            with completed.get_lock():
+                i = completed.value
+                stdout.write(f"[{i}/{n}] done ({(i / n * 100):.2f}%)\n")
+
+    func = partial(save_sample, n_nodes=n_nodes, n_features=n_features, max_norm=max_norm)
+
+    with Pool(n_processes) as P:
+        P.map(func, range(n), chunksize=n // n_processes)        
+    del save_sample
+    
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.INFO)
+    logging.basicConfig(
+        format="%(message)s"
+        )   
+    logger.info('Done!')
+
+
+
+@dataclass
+class BatchGraphInput:
+    coords: Tensor
+    gt_tour: Tensor
+    gt_len: float
+
+    def __len__(self):
+        return 1 if len(self.coords.shape) < 3 else len(self.coords)
+
+
+
+def custom_collate_fn(samples: Sequence[BatchGraphInput]):
+    try:
+        return BatchGraphInput(
+            torch.stack([sample.coords for sample in samples]),
+            torch.stack([sample.gt_tour for sample in samples]),
+            torch.tensor([sample.gt_len for sample in samples], dtype=torch.float32)
+        )
+    except TypeError:
+        return BatchGraphInput(
+            torch.stack([torch.tensor(sample.coords) for sample in samples]),
+            torch.stack([torch.tensor(sample.gt_tour) for sample in samples]),
+            torch.tensor([sample.gt_len for sample in samples], dtype=torch.float32)
+        )
+
+
+
+if __name__ == '__main__':
+    create_random_dataset('ALL_tsp/random', int(1e6), 50, 2)
