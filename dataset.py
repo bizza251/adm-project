@@ -49,7 +49,11 @@ def gt_matrix_from_tour(tour: Tensor):
 class RandomGraphDataset(torch.utils.data.IterableDataset):
 
     def rewind(self):
-        self.g = (item for item in os.scandir(self.path) if item.is_file() and item.name.endswith('.pt'))
+        def get_generator():
+            for item in os.scandir(self.path):
+                if item.is_file() and item.name.endswith('.pt'):
+                    yield item
+        self.g = get_generator()
 
 
     def __init__(
