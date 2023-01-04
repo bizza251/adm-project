@@ -100,6 +100,7 @@ class Trainer:
         self.best_loss = torch.inf
         self.best_metrics = {}
         self.start_epoch = 0
+        self.best_epoch = -1
 
         if resume_from_checkpoint:
             logger.info(f"Resuming from checkpoint `{resume_from_checkpoint}`...")
@@ -184,7 +185,7 @@ class Trainer:
     
     def build_loss_input(self, batch, model_output):
         inputs = (model_output[1],)
-        targets = (gt_matrix_from_tour(batch.gt_len[..., :-1] - 1).to(self.device),)
+        targets = (gt_matrix_from_tour(batch.gt_tour[..., :-1] - 1).to(self.device),)
         return inputs, targets
 
     
@@ -195,14 +196,32 @@ class Trainer:
         model_output = self.model(model_input)
         loss_inputs, loss_targets = self.build_loss_input(batch, model_output)
         l = self.loss(*loss_inputs, *loss_targets)
+        metrics_results = {}
         if self.metrics:
-            metrics_results = {}
             for metric_name, metric_fun in self.metrics.items():
                 # model output, gt
                 metrics_results[metric_name] = metric_fun(model_output, batch)
         return l, metrics_results
 
     
+    def do_eval(self):
+        self.model.eval()
+        logger.info("***** Running evaluation *****")
+        eval_loss = 0
+        n_samples = 0
+        for batch in tqdm(self.eval_dataloader, desc="Evaluation...", mininterval=0.5, miniters=2):
+            step_loss, metrics_results = self.eval_step(batch)
+            eval_loss += step_loss
+            if isinstance(batch, (torch.Tensor, BatchGraphInput)):
+                n_samples += len(batch)
+            else:
+                n_samples += len(batch[0])
+        eval_loss /= n_samples
+        logger.info("***** evaluation completed *****")
+        logger.info(f"Evaluation loss: {eval_loss}")
+        return eval_loss, metrics_results
+
+
     def do_train(self):
         for epoch in range(self.start_epoch, self.epochs):
             self.model.train()
@@ -219,15 +238,19 @@ class Trainer:
             if n_samples:
                 # TODO: log to tensorboard
                 epoch_loss /= n_samples
-                logger.info(f"[epoch {epoch}] loss: {epoch_loss} | Min loss: {self.best_loss}")
-                if epoch_loss < self.best_loss:
-                    logger.info(f"[epoch {epoch}] New min loss: {epoch_loss}")
-                    self.best_loss = epoch_loss
-                    self.save_checkpoint(epoch, True)
+                logger.info(f"[epoch {epoch}] Train loss: {epoch_loss}")
 
             # TODO: run evaluation
-            # TODO: save checkpoint
-            if epoch and epoch % self.save_epochs == 0:
+            eval_loss, _ = self.do_eval()
+            new_best = eval_loss < self.best_loss
+            logger.info(f"[epoch {epoch}] Eval loss: {eval_loss} | Min is {self.best_loss} (epoch {self.best_epoch})")
+            if new_best:
+                    logger.info(f"[epoch {epoch}] New min eval loss: {eval_loss}")
+                    self.best_loss = eval_loss
+                    self.best_epoch = epoch
+                    self.save_checkpoint(epoch, True)
+
+            if not new_best and epoch and epoch % self.save_epochs == 0:
                 self.save_checkpoint(epoch)
         
         self.save_checkpoint(epoch)
@@ -278,30 +301,37 @@ def get_optimizer(args, model):
 
 
 def get_train_dataset(args):
-    if args.train_dataset == 'random':
-        return RandomGraphDataset('ALL_tsp/random')
-    elif args.train_dataset == 'custom':
+    if args.train_dataset == 'custom':
         return GraphDataset()
+    else:
+        return RandomGraphDataset(args.train_dataset)
 
 
 def get_eval_dataset(args):
-    return GraphDataset()
+    if args.train_dataset == 'custom':
+        return GraphDataset()
+    else:
+        return RandomGraphDataset(args.eval_dataset)
 
 
 def get_train_dataloader(args):
-    dataset = get_train_dataset(args)
-    return torch.utils.data.DataLoader(
-        dataset, 
-        batch_size=args.batch_size,
-        num_workers=1,
-        collate_fn=custom_collate_fn)
+    if args.do_train:
+        dataset = get_train_dataset(args)
+        return torch.utils.data.DataLoader(
+            dataset, 
+            batch_size=args.train_batch_size,
+            num_workers=1,
+            collate_fn=custom_collate_fn)
 
 
 def get_eval_dataloader(args):
     if args.do_eval:
         dataset = get_eval_dataset(args)
-        return torch.utils.data.DataLoader(dataset, batch_size=args.batch_size)
-    return None
+        return torch.utils.data.DataLoader(
+            dataset, 
+            batch_size=args.eval_batch_size,
+            num_workers=1,
+            collate_fn=custom_collate_fn)
 
 
 def get_loss(args):

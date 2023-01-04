@@ -12,14 +12,15 @@ if __name__ == '__main__':
 
     # training args
     parser.add_argument('--train_mode', type=str, choices=['supervised', 'reinforce'], default='supervised')
-    parser.add_argument('--batch_size', type=int, default=16)
+    parser.add_argument('--train_batch_size', type=int, default=16)
+    parser.add_argument('--eval_batch_size', type=int, default=16)
     parser.add_argument('--optimizer', type=str, choices=['adam', 'sgd'], default='adam')
     parser.add_argument('--learning_rate', type=float, default=1e-3)
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--loss', type=str, choices=['mse', 'reinforce_loss'], default='mse')
     parser.add_argument('--checkpoint_dir', type=str, default=None)
     parser.add_argument('--resume_from_checkpoint', type=str, default=None)
-    parser.add_argument('--train_dataset', type=str, choices=['random', 'custom'], default=None)
+    parser.add_argument('--train_dataset', type=str, default=None)
     parser.add_argument('--eval_dataset', type=str, default=None)
     parser.add_argument('--lr_scheduler', type=str, choices=['transformer'], default=None)
     parser.add_argument('--warmup_steps', type=int, default=None)

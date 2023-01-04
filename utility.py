@@ -74,6 +74,8 @@ def random_tsp_instance(n, features=2, max_norm=True, low=None, high=None):
         nodes = np.random.rand(n ,features)
     if max_norm:
         nodes /= np.absolute(nodes.max(axis=0))
+    if nodes.dtype == np.float64:
+        nodes = nodes.astype(np.float32)
     G = nx.complete_graph(n)
     edge_keys = [e for e in G.edges()]
     nx.set_node_attributes(G, {k: v for k, v in zip(np.arange(n), nodes)}, 'pos')
@@ -148,20 +150,25 @@ class BatchGraphInput:
 
 
 def custom_collate_fn(samples: Sequence[BatchGraphInput]):
-    try:
-        return BatchGraphInput(
+    return BatchGraphInput(
             torch.stack([sample.coords for sample in samples]),
             torch.stack([sample.gt_tour for sample in samples]),
             torch.tensor([sample.gt_len for sample in samples], dtype=torch.float32)
-        )
-    except TypeError:
-        return BatchGraphInput(
-            torch.stack([torch.tensor(sample.coords) for sample in samples]),
-            torch.stack([torch.tensor(sample.gt_tour) for sample in samples]),
-            torch.tensor([sample.gt_len for sample in samples], dtype=torch.float32)
-        )
+    )
+    # try:
+    #     return BatchGraphInput(
+    #         torch.stack([sample.coords for sample in samples]),
+    #         torch.stack([sample.gt_tour for sample in samples]),
+    #         torch.tensor([sample.gt_len for sample in samples], dtype=torch.float32)
+    #     )
+    # except TypeError:
+    #     return BatchGraphInput(
+    #         torch.stack([torch.tensor(sample.coords) for sample in samples]),
+    #         torch.stack([torch.tensor(sample.gt_tour) for sample in samples]),
+    #         torch.tensor([sample.gt_len for sample in samples], dtype=torch.float32)
+    #     )
 
 
 
 if __name__ == '__main__':
-    create_random_dataset('ALL_tsp/random', int(1e6), 50, 2)
+    create_random_dataset('ALL_tsp/random/train_debug', int(1e2), 50, 2)
