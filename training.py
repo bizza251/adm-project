@@ -209,13 +209,14 @@ class Trainer:
         logger.info("***** Running evaluation *****")
         eval_loss = 0
         n_samples = 0
-        for batch in tqdm(self.eval_dataloader, desc="Evaluation...", mininterval=0.5, miniters=2):
-            step_loss, metrics_results = self.eval_step(batch)
-            eval_loss += step_loss
-            if isinstance(batch, (torch.Tensor, BatchGraphInput)):
-                n_samples += len(batch)
-            else:
-                n_samples += len(batch[0])
+        with torch.no_grad():
+            for batch in tqdm(self.eval_dataloader, desc="Evaluation...", mininterval=0.5, miniters=2):
+                step_loss, metrics_results = self.eval_step(batch)
+                eval_loss += step_loss.item()
+                if isinstance(batch, (torch.Tensor, BatchGraphInput)):
+                    n_samples += len(batch)
+                else:
+                    n_samples += len(batch[0])
         eval_loss /= n_samples
         logger.info("***** evaluation completed *****")
         logger.info(f"Evaluation loss: {eval_loss}")
