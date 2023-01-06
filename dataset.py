@@ -57,6 +57,7 @@ class RandomGraphDataset(torch.utils.data.IterableDataset):
         buffer_size: int = 5000,
         mapping_func: Callable[[Dict], BatchGraphInput] = None,
     ):
+        super().__init__()
         self.path = path
         if mapping_func is None:
            self.mapping_func = lambda x: BatchGraphInput(*x.values())
@@ -68,17 +69,21 @@ class RandomGraphDataset(torch.utils.data.IterableDataset):
 
     def __iter__(self):
         buffer = queue.Queue(self.buffer_size)
-        for item in os.scandir(self.path):
-            if item.is_file() and item.name.endswith('.pt'):
+        worker_info = torch.utils.data.get_worker_info()
+        n_workers = 1 if worker_info is None else worker_info.num_workers
+        current_worker_id = 0 if worker_info is None else worker_info.id
+        worker_ids = list(range(n_workers))
+        for worker_id, item in zip(cycle(worker_ids), os.scandir(self.path)):
+            if worker_id == current_worker_id and item.is_file() and item.name.endswith('.pt'):
                 try:
                     buffer.put(item.path, block=False)
                 except queue.Full:
                     shuffle(buffer.queue)
                     while not buffer.empty():
-                        yield  self.mapping_func(torch.load(buffer.get(block=False)))
+                        yield self.mapping_func(torch.load(buffer.get(block=False)))
                     buffer.put(item.path, block=False)
         while not buffer.empty():
-                        yield  self.mapping_func(torch.load(buffer.get(block=False)))
+            yield self.mapping_func(torch.load(buffer.get(block=False)))
     
 
 

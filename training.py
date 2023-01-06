@@ -244,7 +244,7 @@ class Trainer:
             # TODO: run evaluation
             eval_loss, _ = self.do_eval()
             new_best = eval_loss < self.best_loss
-            logger.info(f"[epoch {epoch}] Eval loss: {eval_loss} | Min is {self.best_loss} (epoch {self.best_epoch})")
+            logger.info(f"[epoch {epoch}] Eval loss: {eval_loss} | Min is {self.best_loss} (epoch {self.best_epoch}) | Processed sample: {n_samples}")
             if new_best:
                     logger.info(f"[epoch {epoch}] New min eval loss: {eval_loss}")
                     self.best_loss = eval_loss
@@ -321,7 +321,7 @@ def get_train_dataloader(args):
         return torch.utils.data.DataLoader(
             dataset, 
             batch_size=args.train_batch_size,
-            num_workers=1,
+            num_workers=args.dataloader_num_workers,
             collate_fn=custom_collate_fn)
 
 

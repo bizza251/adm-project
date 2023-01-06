@@ -26,6 +26,7 @@ if __name__ == '__main__':
     parser.add_argument('--warmup_steps', type=int, default=None)
     parser.add_argument('--device', type=str, default='cpu')
     parser.add_argument('--save_epochs', type=int, default=5)
+    parser.add_argument('--dataloader_num_workers', type=int, default=0)
     
     # model args
     parser.add_argument('--model', type=str, choices=['custom', 'baseline'], default='custom')
