@@ -5,8 +5,11 @@ from torch.functional import Tensor
 from problem_solver import problem_solver
 from models.custom_transformer import TSPCustomTransformer
 from math import ceil, floor
-
+from random import shuffle
 from utility import BatchGraphInput
+import queue
+from itertools import cycle
+
 
 
 def split_data(data, train_p, val_p, test_p):
@@ -48,17 +51,10 @@ def gt_matrix_from_tour(tour: Tensor):
 
 class RandomGraphDataset(torch.utils.data.IterableDataset):
 
-    def rewind(self):
-        def get_generator():
-            for item in os.scandir(self.path):
-                if item.is_file() and item.name.endswith('.pt'):
-                    yield item
-        self.g = get_generator()
-
-
     def __init__(
         self,
         path: str,
+        buffer_size: int = 5000,
         mapping_func: Callable[[Dict], BatchGraphInput] = None,
     ):
         self.path = path
@@ -67,13 +63,22 @@ class RandomGraphDataset(torch.utils.data.IterableDataset):
         else:
             self.mapping_func = mapping_func
 
-        self.rewind()
-
+        self.buffer_size = buffer_size
+        
 
     def __iter__(self):
-        out = (self.mapping_func(torch.load(x.path)) for x in self.g)
-        self.rewind()
-        return out
+        buffer = queue.Queue(self.buffer_size)
+        for item in os.scandir(self.path):
+            if item.is_file() and item.name.endswith('.pt'):
+                try:
+                    buffer.put(item.path, block=False)
+                except queue.Full:
+                    shuffle(buffer.queue)
+                    while not buffer.empty():
+                        yield  self.mapping_func(torch.load(buffer.get(block=False)))
+                    buffer.put(item.path, block=False)
+        while not buffer.empty():
+                        yield  self.mapping_func(torch.load(buffer.get(block=False)))
     
 
 
