@@ -10,6 +10,7 @@ from torch.optim.lr_scheduler import LambdaLR
 import os
 
 from models.utility import TourLossReinforce
+from torch.utils.tensorboard import SummaryWriter
 from utility import BatchGraphInput, custom_collate_fn
 
 
@@ -224,8 +225,12 @@ class Trainer:
 
 
     def do_train(self):
+        writer = SummaryWriter()
+        #j=0
+        
         for epoch in range(self.start_epoch, self.epochs):
             self.model.train()
+            
             epoch_loss = 0
             n_samples = 0
             for batch in tqdm(self.train_dataloader, desc=f"Epoch {epoch}/{self.epochs}", mininterval=1, miniters=5):
@@ -241,7 +246,8 @@ class Trainer:
                 epoch_loss /= n_samples
                 logger.info(f"[epoch {epoch}] Train loss: {epoch_loss}")
 
-            # TODO: run evaluation
+            writer.add_scalar("Loss/train", epoch_loss, epoch)
+
             eval_loss, _ = self.do_eval()
             new_best = eval_loss < self.best_loss
             logger.info(f"[epoch {epoch}] Eval loss: {eval_loss} | Min is {self.best_loss} (epoch {self.best_epoch}) | Processed sample: {n_samples}")
@@ -256,6 +262,7 @@ class Trainer:
         
         self.save_checkpoint(epoch)
         logger.info("Training completed!")
+        writer.close()
 
 
 

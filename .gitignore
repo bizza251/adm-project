@@ -141,3 +141,4 @@ venv_adm.txt
 test.txt
 checkpoints/*
 *.pt
+runs
