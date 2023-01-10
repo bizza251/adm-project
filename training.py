@@ -10,7 +10,7 @@ from torch.optim.lr_scheduler import LambdaLR
 import os
 
 from models.utility import TourLossReinforce
-
+from torch.utils.tensorboard import SummaryWriter
 
 
 logger = logging.getLogger(__name__)
@@ -253,8 +253,12 @@ class Trainer:
 
     
     def do_train(self):
+        writer = SummaryWriter()
+        #j=0
+        
         for epoch in range(self.start_epoch, self.epochs):
             self.model.train()
+            
             epoch_loss = 0
             n_samples = 0
             for i, batch in enumerate(tqdm(self.train_dataloader, desc=f"Epoch {epoch}/{self.epochs}")):
@@ -276,11 +280,14 @@ class Trainer:
 
             # TODO: run evaluation
             # TODO: save checkpoint
+            writer.add_scalar("Loss/train", epoch_loss, epoch)
+
             if epoch and epoch % self.save_epochs == 0:
                 self.save_checkpoint(epoch)
         
         self.save_checkpoint(epoch)
         logger.info("Training completed!")
+        writer.close()
 
 
 
