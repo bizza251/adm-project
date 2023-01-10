@@ -10,12 +10,9 @@ from torch.optim.lr_scheduler import LambdaLR
 import os
 
 from models.utility import TourLossReinforce
-<<<<<<< HEAD
 from torch.utils.tensorboard import SummaryWriter
-=======
 from utility import BatchGraphInput, custom_collate_fn
 
->>>>>>> random_data
 
 
 logger = logging.getLogger(__name__)
