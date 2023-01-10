@@ -309,10 +309,11 @@ def get_optimizer(args, model):
 
 
 def get_train_dataset(args):
-    if args.train_dataset == 'custom':
-        return GraphDataset()
-    else:
-        return RandomGraphDataset(args.train_dataset)
+    # if args.train_dataset == 'custom':
+    #     return GraphDataset()
+    # else:
+    #     return RandomGraphDataset(args.train_dataset)
+    return RandomGraphDataset(args.train_dataset)
 
 
 def get_eval_dataset(args):

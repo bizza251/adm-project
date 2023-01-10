@@ -60,7 +60,8 @@ class RandomGraphDataset(torch.utils.data.IterableDataset):
         super().__init__()
         self.path = path
         if mapping_func is None:
-           self.mapping_func = lambda x: BatchGraphInput(*x.values())
+        #    self.mapping_func = lambda x: BatchGraphInput(*x.values())
+            self.mapping_func = lambda x: BatchGraphInput(torch.tensor(x.coords), torch.tensor(x.sub_opt), torch.tensor(x.sub_opt_cost))
         else:
             self.mapping_func = mapping_func
 
@@ -74,7 +75,7 @@ class RandomGraphDataset(torch.utils.data.IterableDataset):
         current_worker_id = 0 if worker_info is None else worker_info.id
         worker_ids = list(range(n_workers))
         for worker_id, item in zip(cycle(worker_ids), os.scandir(self.path)):
-            if worker_id == current_worker_id and item.is_file() and item.name.endswith('.pt'):
+            if worker_id == current_worker_id and item.is_file():
                 try:
                     buffer.put(item.path, block=False)
                 except queue.Full:
