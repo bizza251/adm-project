@@ -12,7 +12,8 @@ if __name__ == '__main__':
 
     # training args
     parser.add_argument('--train_mode', type=str, choices=['supervised', 'reinforce'], default='supervised')
-    parser.add_argument('--batch_size', type=int, default=16)
+    parser.add_argument('--train_batch_size', type=int, default=16)
+    parser.add_argument('--eval_batch_size', type=int, default=16)
     parser.add_argument('--optimizer', type=str, choices=['adam', 'sgd'], default='adam')
     parser.add_argument('--learning_rate', type=float, default=1e-3)
     parser.add_argument('--epochs', type=int, default=50)

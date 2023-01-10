@@ -360,7 +360,7 @@ class TSPCustomTransformer(nn.Module):
         tour = torch.empty((bsz, nodes), requires_grad=False)
         if self.training:
             # build tour using soft permutation matrix with sinkhorn algorithm
-            node_idx = torch.arange(nodes).expand(bsz, -1)
+            node_idx = torch.arange(nodes, device=x.device).expand(bsz, -1)
             idx = torch.argmax(attn_matrix, dim=2)
             tour = torch.gather(node_idx, 1, idx)
         else:
@@ -368,7 +368,7 @@ class TSPCustomTransformer(nn.Module):
             for i in range(tour.shape[0]):
                 tour[i] = torch.tensor(linear_sum_assignment(-attn_matrix[i].detach().numpy())[1])
         tour = torch.cat((tour, tour[:, 0:1]), dim=1)
-        return tour.to(torch.long), attn_matrix
+        return tour.cpu().to(torch.long), attn_matrix
         
 
 

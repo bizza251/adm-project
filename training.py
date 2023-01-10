@@ -1,6 +1,6 @@
 import pathlib
 import torch
-from dataset import GraphDataset, gt_matrix_from_tour
+from dataset import GraphDataset, RandomGraphDataset, gt_matrix_from_tour
 from models.custom_transformer import TSPCustomTransformer, TSPTransformer
 import logging
 from tqdm import tqdm
@@ -10,7 +10,12 @@ from torch.optim.lr_scheduler import LambdaLR
 import os
 
 from models.utility import TourLossReinforce
+<<<<<<< HEAD
 from torch.utils.tensorboard import SummaryWriter
+=======
+from utility import BatchGraphInput, custom_collate_fn
+
+>>>>>>> random_data
 
 
 logger = logging.getLogger(__name__)
@@ -19,55 +24,6 @@ logging.basicConfig(
     format="%(levelname)s: %(message)s"
 )
 
-def get_model(args):
-    return TSPCustomTransformer.from_args(args).to(args.device)
-
-def get_optimizer(args, model):
-    if args.optimizer == 'adam':
-        return Adam(model.parameters(), lr=args.learning_rate)
-    elif args.optimizer == 'sgd':
-        return SGD(model.parameters(), lr=args.learning_rate)
-    else:
-        raise NotImplementedError()
-
-def get_train_dataset(args):
-    return GraphDataset()
-
-def get_eval_dataset(args):
-    return GraphDataset()
-
-def get_train_dataloader(args):
-    dataset = get_train_dataset(args)
-    return torch.utils.data.DataLoader(dataset, batch_size=args.batch_size)
-
-def get_eval_dataloader(args):
-    if args.do_eval:
-        dataset = get_eval_dataset(args)
-        return torch.utils.data.DataLoader(dataset, batch_size=args.batch_size)
-    return None
-
-def get_loss(args):
-    if args.loss == 'mse':
-        loss = nn.MSELoss()
-    else:
-        raise NotImplementedError()
-    return loss.to(args.device)
-
-def get_transformer_lr_scheduler(optim, d_model, warmup_steps):
-    for group in optim.param_groups:
-        group['lr'] = 1
-    def lambda_lr(s):
-        d_model = d_model
-        warm_up = warmup_steps
-        s += 1
-        return (d_model ** -.5) * min(s ** -.5, s * warm_up ** -1.5)
-    return LambdaLR(optim, lambda_lr)
-
-def get_lr_scheduler(args, optim):
-    if args.lr_scheduler == 'transformer':
-        return get_transformer_lr_scheduler(optim, args.d_model, args.warmup_steps)
-    else:
-        raise NotImplementedError()
 
 
 def train(loader, model, loss, optimizer, epochs):
@@ -148,6 +104,7 @@ class Trainer:
         self.best_loss = torch.inf
         self.best_metrics = {}
         self.start_epoch = 0
+        self.best_epoch = -1
 
         if resume_from_checkpoint:
             logger.info(f"Resuming from checkpoint `{resume_from_checkpoint}`...")
@@ -219,21 +176,20 @@ class Trainer:
 
 
     def process_batch(self, batch):
-        n_nodes, coords, gt_tours, gt_lens = batch
-        if coords.device != self.device:
-            coords = coords.to(self.device)
-        if not torch.is_floating_point(coords):
-            coords = coords.to(torch.float32)
-        return n_nodes, coords, gt_tours, gt_lens
+        if batch.coords.device != self.device:
+            batch.coords = batch.coords.to(self.device)
+        if not torch.is_floating_point(batch.coords):
+            batch.coords = batch.coords.to(torch.float32)
+        return batch
 
     
     def build_model_input(self, batch):
-        return batch[1]
+        return batch.coords
 
     
     def build_loss_input(self, batch, model_output):
         inputs = (model_output[1],)
-        targets = (gt_matrix_from_tour(batch[2][..., :-1] - 1).to(self.device),)
+        targets = (gt_matrix_from_tour(batch.gt_tour[..., :-1] - 1).to(self.device),)
         return inputs, targets
 
     
@@ -244,14 +200,33 @@ class Trainer:
         model_output = self.model(model_input)
         loss_inputs, loss_targets = self.build_loss_input(batch, model_output)
         l = self.loss(*loss_inputs, *loss_targets)
+        metrics_results = {}
         if self.metrics:
-            metrics_results = {}
             for metric_name, metric_fun in self.metrics.items():
                 # model output, gt
                 metrics_results[metric_name] = metric_fun(model_output, batch)
         return l, metrics_results
 
     
+    def do_eval(self):
+        self.model.eval()
+        logger.info("***** Running evaluation *****")
+        eval_loss = 0
+        n_samples = 0
+        with torch.no_grad():
+            for batch in tqdm(self.eval_dataloader, desc="Evaluation...", mininterval=0.5, miniters=2):
+                step_loss, metrics_results = self.eval_step(batch)
+                eval_loss += step_loss.item()
+                if isinstance(batch, (torch.Tensor, BatchGraphInput)):
+                    n_samples += len(batch)
+                else:
+                    n_samples += len(batch[0])
+        eval_loss /= n_samples
+        logger.info("***** evaluation completed *****")
+        logger.info(f"Evaluation loss: {eval_loss}")
+        return eval_loss, metrics_results
+
+
     def do_train(self):
         writer = SummaryWriter()
         #j=0
@@ -261,10 +236,10 @@ class Trainer:
             
             epoch_loss = 0
             n_samples = 0
-            for i, batch in enumerate(tqdm(self.train_dataloader, desc=f"Epoch {epoch}/{self.epochs}")):
+            for batch in tqdm(self.train_dataloader, desc=f"Epoch {epoch}/{self.epochs}", mininterval=1, miniters=5):
                 step_loss = self.train_step(batch)
                 epoch_loss += step_loss.item()
-                if isinstance(batch, torch.Tensor):
+                if isinstance(batch, (torch.Tensor, BatchGraphInput)):
                     n_samples += len(batch)
                 else:
                     n_samples += len(batch[0])
@@ -272,17 +247,26 @@ class Trainer:
             if n_samples:
                 # TODO: log to tensorboard
                 epoch_loss /= n_samples
-                logger.info(f"[epoch {epoch}] loss: {epoch_loss} | Min loss: {self.best_loss}")
-                if epoch_loss < self.best_loss:
-                    logger.info(f"[epoch {epoch}] New min loss: {epoch_loss}")
-                    self.best_loss = epoch_loss
-                    self.save_checkpoint(epoch, True)
+                logger.info(f"[epoch {epoch}] Train loss: {epoch_loss}")
 
             # TODO: run evaluation
+<<<<<<< HEAD
             # TODO: save checkpoint
             writer.add_scalar("Loss/train", epoch_loss, epoch)
 
             if epoch and epoch % self.save_epochs == 0:
+=======
+            eval_loss, _ = self.do_eval()
+            new_best = eval_loss < self.best_loss
+            logger.info(f"[epoch {epoch}] Eval loss: {eval_loss} | Min is {self.best_loss} (epoch {self.best_epoch})")
+            if new_best:
+                    logger.info(f"[epoch {epoch}] New min eval loss: {eval_loss}")
+                    self.best_loss = eval_loss
+                    self.best_epoch = epoch
+                    self.save_checkpoint(epoch, True)
+
+            if not new_best and epoch and epoch % self.save_epochs == 0:
+>>>>>>> random_data
                 self.save_checkpoint(epoch)
         
         self.save_checkpoint(epoch)
@@ -296,7 +280,7 @@ class ReinforceTrainer(Trainer):
     def build_loss_input(self, batch, model_output):
         tours, sum_log_probs = model_output
         inputs = (sum_log_probs,)
-        coords, gt_len = batch[1], batch[3]
+        coords, gt_len = batch.coords, batch.gt_len
         targets = (coords[torch.arange(len(tours)).view(-1, 1), tours], gt_len.to(sum_log_probs.device))
         return inputs, targets
 
@@ -308,7 +292,7 @@ class CustomReinforceTrainer(Trainer):
         tours, attn_matrix = model_output
         sum_log_probs = torch.max(attn_matrix, dim=-1)[0].sum(dim=-1)
         inputs = (sum_log_probs,)
-        coords, gt_len = batch[1], batch[3]
+        coords, gt_len = batch.coords, batch.gt_len
         targets = (coords[torch.arange(len(tours)).view(-1, 1), tours], gt_len.to(sum_log_probs.device))
         return inputs, targets
 
@@ -334,21 +318,37 @@ def get_optimizer(args, model):
 
 
 def get_train_dataset(args):
-    return GraphDataset()
+    if args.train_dataset == 'custom':
+        return GraphDataset()
+    else:
+        return RandomGraphDataset(args.train_dataset)
 
 
 def get_eval_dataset(args):
-    return GraphDataset()
+    if args.train_dataset == 'custom':
+        return GraphDataset()
+    else:
+        return RandomGraphDataset(args.eval_dataset)
 
 
 def get_train_dataloader(args):
-    dataset = get_train_dataset(args)
-    return torch.utils.data.DataLoader(dataset, batch_size=args.batch_size)
+    if args.do_train:
+        dataset = get_train_dataset(args)
+        return torch.utils.data.DataLoader(
+            dataset, 
+            batch_size=args.train_batch_size,
+            num_workers=1,
+            collate_fn=custom_collate_fn)
 
 
-def get_train_dataloader(args):
-    dataset = get_eval_dataset(args)
-    return torch.utils.data.DataLoader(dataset, batch_size=args.batch_size)
+def get_eval_dataloader(args):
+    if args.do_eval:
+        dataset = get_eval_dataset(args)
+        return torch.utils.data.DataLoader(
+            dataset, 
+            batch_size=args.eval_batch_size,
+            num_workers=1,
+            collate_fn=custom_collate_fn)
 
 
 def get_loss(args):
