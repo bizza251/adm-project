@@ -2,21 +2,7 @@ from typing import Iterable
 import torch
 from torch import nn
 from torch.functional import Tensor
-
-
-
-def get_tour_len(tour: Tensor) -> Tensor:
-    """Compute the length of a batch of tours.
-
-    Args:
-        tour (Tensor): shape (N, L, D)
-
-    Returns:
-        Tensor: shape (N), contains the length of each tour in the batch.
-    """   
-    bsz, _, features = tour.shape 
-    diff = torch.diff(tour, dim=1, append=torch.zeros(bsz, 1, features, device=tour.device))
-    return diff.square().sum(dim=-1).sqrt().sum(dim=-1)
+from utility import get_tour_len
 
         
 

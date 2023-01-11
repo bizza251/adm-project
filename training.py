@@ -1,4 +1,5 @@
 import pathlib
+import numpy as np
 import torch
 from dataset import GraphDataset, RandomGraphDataset, gt_matrix_from_tour
 from models.custom_transformer import TSPCustomTransformer, TSPTransformer
@@ -11,7 +12,7 @@ import os
 
 from models.utility import TourLossReinforce
 from torch.utils.tensorboard import SummaryWriter
-from utility import BatchGraphInput, custom_collate_fn
+from utility import BatchGraphInput, custom_collate_fn, len_to_gt_len_ratio
 
 
 
@@ -123,13 +124,14 @@ class Trainer:
     
     @classmethod
     def from_args(cls, args):
-        kwargs = {k: v for k, v in vars(args).items() if k not in {'model', 'train_dataloader', 'eval_dataloader', 'optimizer', 'loss', 'epochs'}}
+        kwargs = {k: v for k, v in vars(args).items() if k not in {'model', 'train_dataloader', 'eval_dataloader', 'optimizer', 'loss', 'epochs', 'metrics'}}
         model = get_model(args)
         train_dataloader = get_train_dataloader(args)
         eval_dataloader = get_eval_dataloader(args)
         optimizer = get_optimizer(args, model)
         loss = get_loss(args)
         scheduler = get_lr_scheduler(args, optimizer)
+        metrics = get_metrics(args)
 
         return cls(
             model,
@@ -139,6 +141,7 @@ class Trainer:
             args.epochs,
             eval_dataloader,
             scheduler=scheduler,
+            metrics=metrics,
             **kwargs)
 
     
@@ -154,6 +157,17 @@ class Trainer:
             path = os.path.join(self.checkpoint_dir, f"checkpoint_{epoch}{'_best' if is_best else ''}.pt")
             torch.save(checkpoint, path)
             logger.info(f"Checkpoint for epoch {epoch} saved.")
+
+
+    def update_metrics(self, metrics_results):
+        for k, v in metrics_results.items():
+            if k not in self.best_metrics:
+                self.best_metrics[k] = v
+            else:
+                if v < self.best_metrics[k]:
+                    # TODO: currently we assume `better` means `less than`.
+                    logger.info(f"New best for metric {k}: {v} (previous was {self.best_metrics[k]}).")
+                    self.best_metrics[k] = v
 
 
     def train_step(self, batch):
@@ -210,10 +224,13 @@ class Trainer:
         logger.info("***** Running evaluation *****")
         eval_loss = 0
         n_samples = 0
+        metrics_results = {k: [] for k in self.metrics.keys()}
         with torch.no_grad():
             for batch in tqdm(self.eval_dataloader, desc="Evaluation...", mininterval=0.5, miniters=2):
-                step_loss, metrics_results = self.eval_step(batch)
+                step_loss, step_metrics_results = self.eval_step(batch)
                 eval_loss += step_loss.item()
+                for metric_name, metric_value in step_metrics_results.items():
+                    metrics_results[metric_name].append(metric_value)
                 if isinstance(batch, (torch.Tensor, BatchGraphInput)):
                     n_samples += len(batch)
                 else:
@@ -221,6 +238,9 @@ class Trainer:
         eval_loss /= n_samples
         logger.info("***** evaluation completed *****")
         logger.info(f"Evaluation loss: {eval_loss}")
+        for metric_name in metrics_results.keys():
+            avg = np.mean(metrics_results[metric_name])
+            metrics_results[metric_name] = avg
         return eval_loss, metrics_results
 
 
@@ -233,13 +253,15 @@ class Trainer:
             
             epoch_loss = 0
             n_samples = 0
-            for batch in tqdm(self.train_dataloader, desc=f"Epoch {epoch}/{self.epochs}", mininterval=1, miniters=5):
+            for i, batch in enumerate(tqdm(self.train_dataloader, desc=f"Epoch {epoch}/{self.epochs}", mininterval=1, miniters=5)):
                 step_loss = self.train_step(batch)
                 epoch_loss += step_loss.item()
                 if isinstance(batch, (torch.Tensor, BatchGraphInput)):
                     n_samples += len(batch)
                 else:
                     n_samples += len(batch[0])
+                if i % 5 == 0:
+                    writer.add_scalar("train/learning rate", self.optimizer.param_groups[0]['lr'], (i + 1) * (epoch + 1))
             
             if n_samples:
                 # TODO: log to tensorboard
@@ -248,7 +270,7 @@ class Trainer:
 
             writer.add_scalar("Loss/train", epoch_loss, epoch)
 
-            eval_loss, _ = self.do_eval()
+            eval_loss, metrics_results = self.do_eval()
             new_best = eval_loss < self.best_loss
             logger.info(f"[epoch {epoch}] Eval loss: {eval_loss} | Min is {self.best_loss} (epoch {self.best_epoch}) | Processed sample: {n_samples}")
             if new_best:
@@ -256,6 +278,10 @@ class Trainer:
                     self.best_loss = eval_loss
                     self.best_epoch = epoch
                     self.save_checkpoint(epoch, True)
+            
+            self.update_metrics(metrics_results)
+            for k, v in metrics_results.items():
+                writer.add_scalar(f"Metrics/{k}", v, epoch)
 
             if not new_best and epoch and epoch % self.save_epochs == 0:
                 self.save_checkpoint(epoch)
@@ -365,7 +391,9 @@ def get_transformer_lr_scheduler(optim, d_model, warmup_steps):
 
 
 def get_lr_scheduler(args, optim):
-    if args.lr_scheduler == 'transformer':
+    if args.lr_scheduler is None:
+        return
+    elif args.lr_scheduler == 'transformer':
         return get_transformer_lr_scheduler(optim, args.d_model, args.warmup_steps)
     else:
         raise NotImplementedError()
@@ -385,6 +413,19 @@ def get_trainer(args):
     else:
         raise NotImplementedError()
     return trainer
+
+
+
+def get_metrics(args):
+    metrics = {}
+    if args.metrics is not None:
+        for metric in args.metrics:
+            if metric == 'len_to_gt_len_ratio':
+                metrics[metric] = len_to_gt_len_ratio
+            else:
+                # TODO: eventually add other metrics
+                raise NotImplementedError()
+    return metrics
 
 
 if __name__ == '__main__':

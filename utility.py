@@ -169,6 +169,28 @@ def custom_collate_fn(samples: Sequence[BatchGraphInput]):
     #     )
 
 
+def get_tour_len(tour: Tensor) -> Tensor:
+    """Compute the length of a batch of tours.
+
+    Args:
+        tour (Tensor): shape (N, L, D)
+
+    Returns:
+        Tensor: shape (N), contains the length of each tour in the batch.
+    """   
+    bsz, _, features = tour.shape 
+    diff = torch.diff(tour, dim=1, append=torch.zeros(bsz, 1, features, device=tour.device))
+    return diff.square().sum(dim=-1).sqrt().sum(dim=-1)
+
+
+
+def len_to_gt_len_ratio(model_output, batch):
+    tours = model_output[0]
+    tour_coords = batch.coords[torch.arange(len(tours)).view(-1, 1), tours]
+    tour_len = get_tour_len(tour_coords)
+    return (tour_len / batch.gt_len).mean().item()
+
+
 
 if __name__ == '__main__':
     create_random_dataset('ALL_tsp/random/train_debug', int(1e2), 50, 2)
