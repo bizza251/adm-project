@@ -13,6 +13,13 @@ develop-eggs/
 dist/
 downloads/
 eggs/
+fittizi/
+generated_test/
+generated_eval/
+generated/
+*.zip
+generated_train/
+normalized/
 .eggs/
 lib/
 lib64/
