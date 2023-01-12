@@ -20,11 +20,38 @@ class TourLossReinforce(nn.Module):
     def forward(
         self,
         sum_probs: Tensor,
+        coords: Tensor,
+        gt_len: Tensor
+    ) -> Tensor:
+        tour_len = get_tour_len(coords)
+        return torch.mean((tour_len - gt_len) * torch.log(sum_probs))
+
+
+
+class ValidTourLossReinforce(nn.Module):
+
+    def __init__(self, penalty=100):
+        super().__init__()
+        self.penalty = penalty
+
+
+    def forward(
+        self,
+        sum_probs: Tensor,
+        coords: Tensor,
         tour: Tensor,
         gt_len: Tensor
     ) -> Tensor:
-        tour_len = get_tour_len(tour)
-        return torch.mean((tour_len - gt_len) * torch.log(sum_probs))
+        unique_length = torch.tensor([len(set(t.tolist())) for t in tour])
+        valid_tour_mask = torch.where(unique_length == tour.shape[-1], True, False)
+        rewards = torch.empty((len(sum_probs), ), device=sum_probs.device)
+        if torch.any(valid_tour_mask):
+            tour_len = get_tour_len(coords[valid_tour_mask])
+            rewards[valid_tour_mask] = (tour_len - gt_len[valid_tour_mask])
+        invalid_tour_mask = ~valid_tour_mask
+        if torch.any(invalid_tour_mask):
+            rewards[invalid_tour_mask] = self.penalty
+        return torch.mean(rewards * torch.log(sum_probs))
 
 
 

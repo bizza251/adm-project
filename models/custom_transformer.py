@@ -366,7 +366,7 @@ class TSPCustomTransformer(nn.Module):
         else:
             # build tour using hard permutation matrix with hungarian algorithm
             for i in range(tour.shape[0]):
-                tour[i] = torch.tensor(linear_sum_assignment(-attn_matrix[i].detach().numpy())[1])
+                tour[i] = torch.tensor(linear_sum_assignment(-attn_matrix[i].detach().cpu().numpy())[1])
         tour = torch.cat((tour, tour[:, 0:1]), dim=1)
         return tour.cpu().to(torch.long), attn_matrix
         

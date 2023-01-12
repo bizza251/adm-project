@@ -10,9 +10,10 @@ import torch.nn  as nn
 from torch.optim.lr_scheduler import LambdaLR
 import os
 
-from models.utility import TourLossReinforce
 from torch.utils.tensorboard import SummaryWriter
 from utility import BatchGraphInput, custom_collate_fn, len_to_gt_len_ratio
+from models.utility import TourLossReinforce, ValidTourLossReinforce
+from utility import BatchGraphInput, custom_collate_fn
 
 
 
@@ -308,9 +309,9 @@ class CustomReinforceTrainer(Trainer):
     def build_loss_input(self, batch, model_output):
         tours, attn_matrix = model_output
         sum_log_probs = torch.max(attn_matrix, dim=-1)[0].sum(dim=-1)
-        inputs = (sum_log_probs,)
         coords, gt_len = batch.coords, batch.gt_len
-        targets = (coords[torch.arange(len(tours)).view(-1, 1), tours], gt_len.to(sum_log_probs.device))
+        inputs = (sum_log_probs, coords[torch.arange(len(tours)).view(-1, 1), tours], tours)
+        targets = (gt_len.to(sum_log_probs.device),)
         return inputs, targets
 
 
@@ -365,7 +366,7 @@ def get_eval_dataloader(args):
         return torch.utils.data.DataLoader(
             dataset, 
             batch_size=args.eval_batch_size,
-            num_workers=1,
+            num_workers=args.dataloader_num_workers,
             collate_fn=custom_collate_fn)
 
 
@@ -373,7 +374,10 @@ def get_loss(args):
     if args.loss == 'mse':
         loss = nn.MSELoss()
     elif args.loss == 'reinforce_loss':
-        loss = TourLossReinforce()
+        if args.model == 'custom':
+            loss = ValidTourLossReinforce()
+        else:
+            loss = TourLossReinforce()
     else:
         raise NotImplementedError()
     return loss.to(args.device)
