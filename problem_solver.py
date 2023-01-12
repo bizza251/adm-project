@@ -10,4 +10,5 @@ def problem_solver(path: str = 'our_graphs'):
 if __name__ == '__main__':
     gen = problem_solver()
     g = next(gen)
+    print(g)
     pass
