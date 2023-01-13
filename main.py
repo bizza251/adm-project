@@ -51,6 +51,8 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
+    trainer = get_trainer(args)
     if args.do_train:
-        trainer = get_trainer(args)
         train_result = trainer.do_train()
+    elif args.do_eval:
+        eval_result = trainer.do_eval()
