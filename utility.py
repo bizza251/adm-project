@@ -188,7 +188,7 @@ def len_to_gt_len_ratio(model_output, batch):
     tours = model_output[0]
     tour_coords = batch.coords[torch.arange(len(tours)).view(-1, 1), tours]
     tour_len = get_tour_len(tour_coords)
-    return (tour_len / batch.gt_len).mean().item()
+    return (tour_len.cpu() / batch.gt_len).mean().item()
 
 
 

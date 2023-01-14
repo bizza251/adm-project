@@ -274,6 +274,7 @@ class Trainer:
             writer.add_scalar("Loss/train", epoch_loss, epoch)
 
             eval_loss, metrics_results = self.do_eval()
+            writer.add_scalar("Loss/eval", eval_loss, epoch)
             new_best = eval_loss < self.best_loss
             logger.info(f"[epoch {epoch}] Eval loss: {eval_loss} | Min is {self.best_loss} (epoch {self.best_epoch})")
             if new_best:
