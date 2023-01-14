@@ -81,6 +81,7 @@ class Trainer:
         device='cpu',
         metrics=None,
         save_epochs=5,
+        tb_comment='',
         *args,
         **kwargs
     ):
@@ -96,6 +97,7 @@ class Trainer:
         self.device = device
         self.metrics = metrics
         self.save_epochs = save_epochs
+        self.tb_comment = tb_comment 
 
         if checkpoint_dir:
             pathlib.Path(checkpoint_dir).mkdir(parents=True, exist_ok=True) 
@@ -246,7 +248,7 @@ class Trainer:
 
 
     def do_train(self):
-        writer = SummaryWriter()
+        writer = SummaryWriter(comment=self.tb_comment)
         #j=0
         
         for epoch in range(self.start_epoch, self.epochs):
@@ -267,13 +269,13 @@ class Trainer:
             if n_samples:
                 # TODO: log to tensorboard
                 epoch_loss /= n_samples
-                logger.info(f"[epoch {epoch}] Train loss: {epoch_loss}")
+                logger.info(f"[epoch {epoch}] Train loss: {epoch_loss} | Processed sample: {n_samples}")
 
             writer.add_scalar("Loss/train", epoch_loss, epoch)
 
             eval_loss, metrics_results = self.do_eval()
             new_best = eval_loss < self.best_loss
-            logger.info(f"[epoch {epoch}] Eval loss: {eval_loss} | Min is {self.best_loss} (epoch {self.best_epoch}) | Processed sample: {n_samples}")
+            logger.info(f"[epoch {epoch}] Eval loss: {eval_loss} | Min is {self.best_loss} (epoch {self.best_epoch})")
             if new_best:
                     logger.info(f"[epoch {epoch}] New min eval loss: {eval_loss}")
                     self.best_loss = eval_loss
