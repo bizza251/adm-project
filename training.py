@@ -240,10 +240,11 @@ class Trainer:
                     n_samples += len(batch[0])
         eval_loss /= n_samples
         logger.info("***** evaluation completed *****")
-        logger.info(f"Evaluation loss: {eval_loss}")
+        logger.info(f"Eval loss: {eval_loss}")
         for metric_name in metrics_results.keys():
             avg = np.mean(metrics_results[metric_name])
             metrics_results[metric_name] = avg
+            logger.info(f"Eval `{metric_name}`: {metrics_results[metric_name]}")
         return eval_loss, metrics_results
 
 

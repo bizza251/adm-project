@@ -61,7 +61,7 @@ class RandomGraphDataset(torch.utils.data.IterableDataset):
         self.path = path
         if mapping_func is None:
         #    self.mapping_func = lambda x: BatchGraphInput(*x.values())
-            self.mapping_func = lambda x: BatchGraphInput(torch.tensor(x.coords), torch.tensor(x.sub_opt), torch.tensor(x.sub_opt_cost))
+            self.mapping_func = lambda x: BatchGraphInput(x.coords, torch.tensor(x.sub_opt), x.sub_opt_cost)
         else:
             self.mapping_func = mapping_func
 
