@@ -8,7 +8,7 @@ from torch.nn.modules.normalization import LayerNorm
 import torch.nn.functional as F
 from torch.nn.functional import dropout, linear, softmax
 from models.activation import sinkhorn
-from models.layer import CustomPositionalEncoding, CustomSinPositionalEncoding, get_positional_encoding
+from models.layer import CustomPositionalEncoding, CustomSinPositionalEncoding, SinPositionalEncoding, get_positional_encoding
 from scipy.optimize import linear_sum_assignment
 from models.utility import TourLoss, get_node_mask
 from math import sqrt
@@ -267,6 +267,15 @@ class TSPCustomEncoder(nn.Module):
 
 
 class TSPCustomTransformer(nn.Module):
+
+    def _handle_sin_pe(self):
+        if type(self.pe) is SinPositionalEncoding:
+            # ugly workaround
+            from functools import partial
+            fwd = partial(self.pe.forward, add_to_input=False)
+            self.pe.forward = fwd
+
+
     def __init__(self,
         in_features=2,
         d_model=128, 
@@ -322,6 +331,8 @@ class TSPCustomTransformer(nn.Module):
         self.d_k = d_model / nhead
         self.sinkhorn_tau = sinkhorn_tau
         self.sinkhorn_i = sinkhorn_i
+        
+        self._handle_sin_pe()
 
 
     @classmethod
