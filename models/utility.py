@@ -30,7 +30,7 @@ class TourLossReinforce(nn.Module):
 
 class ValidTourLossReinforce(nn.Module):
 
-    def __init__(self, penalty=100):
+    def __init__(self, penalty=1000):
         super().__init__()
         self.penalty = penalty
 
@@ -42,15 +42,20 @@ class ValidTourLossReinforce(nn.Module):
         tour: Tensor,
         gt_len: Tensor
     ) -> Tensor:
-        unique_length = torch.tensor([len(set(t.tolist())) for t in tour])
-        valid_tour_mask = torch.where(unique_length == tour.shape[-1], True, False)
+        unique_nodes = torch.tensor([len(set(t.tolist())) for t in tour], dtype=sum_probs.dtype, device=sum_probs.device)
+        expected_unique_nodes = tour.shape[1] - 1
+        valid_tour_mask = torch.where(unique_nodes == expected_unique_nodes, True, False)
         rewards = torch.empty((len(sum_probs), ), device=sum_probs.device)
         if torch.any(valid_tour_mask):
             tour_len = get_tour_len(coords[valid_tour_mask])
             rewards[valid_tour_mask] = (tour_len - gt_len[valid_tour_mask])
+            print("********************* VALID TOUR! *********************")
         invalid_tour_mask = ~valid_tour_mask
         if torch.any(invalid_tour_mask):
-            rewards[invalid_tour_mask] = self.penalty
+            # rewards[invalid_tour_mask] = self.penalty
+            # rewards[invalid_tour_mask] = torch.tensor(10 * (expected_unique_nodes - unique_nodes[invalid_tour_mask]), \
+            #     dtype=sum_probs.dtype, device=sum_probs.device)
+            rewards[invalid_tour_mask] = 10 * (expected_unique_nodes - unique_nodes[invalid_tour_mask])
         return torch.mean(rewards * torch.log(sum_probs))
 
 
