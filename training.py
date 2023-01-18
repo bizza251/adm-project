@@ -223,30 +223,32 @@ class Trainer:
 
     
     def do_eval(self):
-        self.model.eval()
-        logger.info("***** Running evaluation *****")
-        eval_loss = 0
-        n_samples = 0
-        n_batches = 0
-        metrics_results = {k: [] for k in self.metrics.keys()}
-        with torch.no_grad():
-            for batch in tqdm(self.eval_dataloader, desc="Evaluation...", mininterval=0.5, miniters=2):
-                step_loss, step_metrics_results = self.eval_step(batch)
-                eval_loss += step_loss.item()
-                for metric_name, metric_value in step_metrics_results.items():
-                    metrics_results[metric_name].append(metric_value)
-                if isinstance(batch, (torch.Tensor, BatchGraphInput)):
-                    n_samples += len(batch)
-                else:
-                    n_samples += len(batch[0])
-                n_batches += 1
-        eval_loss /= n_batches
-        logger.info("***** evaluation completed *****")
-        logger.info(f"Eval loss: {eval_loss} | Processed sample: {n_samples}")
-        for metric_name in metrics_results.keys():
-            avg = np.mean(metrics_results[metric_name])
-            metrics_results[metric_name] = avg
-            logger.info(f"Eval `{metric_name}`: {metrics_results[metric_name]}")
+        eval_loss, metrics_results = torch.inf, {}
+        if self.eval_dataloader is not None:
+            self.model.eval()
+            logger.info("***** Running evaluation *****")
+            eval_loss = 0
+            n_samples = 0
+            n_batches = 0
+            metrics_results = {k: [] for k in self.metrics.keys()}
+            with torch.no_grad():
+                for batch in tqdm(self.eval_dataloader, desc="Evaluation...", mininterval=0.5, miniters=2):
+                    step_loss, step_metrics_results = self.eval_step(batch)
+                    eval_loss += step_loss.item()
+                    for metric_name, metric_value in step_metrics_results.items():
+                        metrics_results[metric_name].append(metric_value)
+                    if isinstance(batch, (torch.Tensor, BatchGraphInput)):
+                        n_samples += len(batch)
+                    else:
+                        n_samples += len(batch[0])
+                    n_batches += 1
+            eval_loss /= n_batches
+            logger.info("***** evaluation completed *****")
+            logger.info(f"Eval loss: {eval_loss} | Processed sample: {n_samples}")
+            for metric_name in metrics_results.keys():
+                avg = np.mean(metrics_results[metric_name])
+                metrics_results[metric_name] = avg
+                logger.info(f"Eval `{metric_name}`: {metrics_results[metric_name]}")
         return eval_loss, metrics_results
 
 
