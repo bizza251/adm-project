@@ -3,6 +3,7 @@ import argparse
 import optuna
 import logging
 import sys
+from datetime import datetime
 
 
 def objective(trial):
@@ -18,7 +19,7 @@ def objective(trial):
     parser.add_argument('--eval_batch_size', type=int, default=16)
     parser.add_argument('--optimizer', type=str, choices=['adam', 'sgd'], default='adam')
     parser.add_argument('--learning_rate', type=float, default=1e-3)
-    parser.add_argument('--epochs', type=int, default=1)
+    parser.add_argument('--epochs', type=int, default=50000)
     parser.add_argument('--loss', type=str, choices=['mse', 'reinforce_loss'], default='mse')
     parser.add_argument('--checkpoint_dir', type=str, default=None)
     parser.add_argument('--resume_from_checkpoint', type=str, default=None)
@@ -55,23 +56,32 @@ def objective(trial):
     args = parser.parse_args()
 
     #parameters to be optimized
-    args.learning_rate = trial.suggest_float('learning_rate', 10e-4, 10e-2)
+    args.learning_rate = trial.suggest_float('learning_rate', 10e-7, 10e-2)
+    args.train_batch_size = trial.suggest_int('train_batch_size', 16, 256)
+    args.eval_batch_size = trial.suggest_int('eval_batch_size', 16, 256)
 
     trainer = get_trainer(args)
     if args.do_train:
         train_result = trainer.do_train()
     elif args.do_eval:
         eval_result = trainer.do_eval()
-    return trainer.best_loss
+    return trainer.best_loss #metric to be optimized
         
 
 
 if __name__ == '__main__':
+    n_trials = 30
+
     optuna.logging.get_logger("optuna").addHandler(logging.StreamHandler(sys.stdout))
-    study_name = "example-study"  # Unique identifier of the study.
+    now = datetime.now()
+    study_name = f"tuning_{now.year}_{now.month}_{now.day}_{now.hour}_{now.minute}"  # Unique identifier of the study.
     storage_name = "sqlite:///{}.db".format(study_name)
+
+    print('To see params dashboard run the following command:')
+    print(f'optuna-dashboard {storage_name}')
+
     study = optuna.create_study(study_name=study_name, storage=storage_name)
-    study.optimize(objective, n_trials=1)
+    study.optimize(objective, n_trials=n_trials)
     
     print(study.best_params)
     print('To see params dashboard run the following command:')

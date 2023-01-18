@@ -14,6 +14,7 @@ dist/
 downloads/
 eggs/
 fittizi/
+tuning*
 generated_test/
 generated_eval/
 generated/
