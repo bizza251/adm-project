@@ -227,6 +227,7 @@ class Trainer:
         logger.info("***** Running evaluation *****")
         eval_loss = 0
         n_samples = 0
+        n_batches = 0
         metrics_results = {k: [] for k in self.metrics.keys()}
         with torch.no_grad():
             for batch in tqdm(self.eval_dataloader, desc="Evaluation...", mininterval=0.5, miniters=2):
@@ -238,9 +239,10 @@ class Trainer:
                     n_samples += len(batch)
                 else:
                     n_samples += len(batch[0])
-        eval_loss /= n_samples
+                n_batches += 1
+        eval_loss /= n_batches
         logger.info("***** evaluation completed *****")
-        logger.info(f"Eval loss: {eval_loss}")
+        logger.info(f"Eval loss: {eval_loss} | Processed sample: {n_samples}")
         for metric_name in metrics_results.keys():
             avg = np.mean(metrics_results[metric_name])
             metrics_results[metric_name] = avg
@@ -257,6 +259,7 @@ class Trainer:
             
             epoch_loss = 0
             n_samples = 0
+            n_batches = 0
             for i, batch in enumerate(tqdm(self.train_dataloader, desc=f"Epoch {epoch}/{self.epochs}", mininterval=1, miniters=5)):
                 step_loss = self.train_step(batch)
                 epoch_loss += step_loss.item()
@@ -266,10 +269,11 @@ class Trainer:
                     n_samples += len(batch[0])
                 if i % 5 == 0:
                     writer.add_scalar("train/learning rate", self.optimizer.param_groups[0]['lr'], (i + 1) * (epoch + 1))
+                n_batches += 1
             
             if n_samples:
                 # TODO: log to tensorboard
-                epoch_loss /= n_samples
+                epoch_loss /= n_batches
                 logger.info(f"[epoch {epoch}] Train loss: {epoch_loss} | Processed sample: {n_samples}")
 
             writer.add_scalar("Loss/train", epoch_loss, epoch)
