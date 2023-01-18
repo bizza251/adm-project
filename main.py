@@ -1,9 +1,11 @@
 from training import Trainer, get_trainer
 import argparse
+import optuna
+import logging
+import sys
 
 
-
-if __name__ == '__main__':
+def objective(trial):
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--do_train', action='store_true')
@@ -16,7 +18,7 @@ if __name__ == '__main__':
     parser.add_argument('--eval_batch_size', type=int, default=16)
     parser.add_argument('--optimizer', type=str, choices=['adam', 'sgd'], default='adam')
     parser.add_argument('--learning_rate', type=float, default=1e-3)
-    parser.add_argument('--epochs', type=int, default=50)
+    parser.add_argument('--epochs', type=int, default=1)
     parser.add_argument('--loss', type=str, choices=['mse', 'reinforce_loss'], default='mse')
     parser.add_argument('--checkpoint_dir', type=str, default=None)
     parser.add_argument('--resume_from_checkpoint', type=str, default=None)
@@ -52,8 +54,25 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
+    #parameters to be optimized
+    args.learning_rate = trial.suggest_float('learning_rate', 10e-4, 10e-2)
+
     trainer = get_trainer(args)
     if args.do_train:
         train_result = trainer.do_train()
     elif args.do_eval:
         eval_result = trainer.do_eval()
+    return trainer.best_loss
+        
+
+
+if __name__ == '__main__':
+    optuna.logging.get_logger("optuna").addHandler(logging.StreamHandler(sys.stdout))
+    study_name = "example-study"  # Unique identifier of the study.
+    storage_name = "sqlite:///{}.db".format(study_name)
+    study = optuna.create_study(study_name=study_name, storage=storage_name)
+    study.optimize(objective, n_trials=1)
+    
+    print(study.best_params)
+    print('To see params dashboard run the following command:')
+    print(f'optuna-dashboard {storage_name}')
