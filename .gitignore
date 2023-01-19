@@ -15,10 +15,9 @@ downloads/
 eggs/
 fittizi/
 tuning*
-generated_test/
-generated_eval/
-generated/
+generated*/
 *.zip
+*.db
 generated_train/
 normalized/
 .eggs/

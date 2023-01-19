@@ -19,7 +19,7 @@ def objective(trial):
     parser.add_argument('--eval_batch_size', type=int, default=16)
     parser.add_argument('--optimizer', type=str, choices=['adam', 'sgd'], default='adam')
     parser.add_argument('--learning_rate', type=float, default=1e-3)
-    parser.add_argument('--epochs', type=int, default=50000)
+    parser.add_argument('--epochs', type=int, default=1000)
     parser.add_argument('--loss', type=str, choices=['mse', 'reinforce_loss'], default='mse')
     parser.add_argument('--checkpoint_dir', type=str, default=None)
     parser.add_argument('--resume_from_checkpoint', type=str, default=None)
@@ -49,6 +49,8 @@ def objective(trial):
     parser.add_argument('--add_cross_attn', type=bool, default=True)
     parser.add_argument('--use_q_proj_ca', type=bool, default=False)
     parser.add_argument('--positional_encoding', type=str, choices=['sin', 'custom_sin', 'custom'], default='custom_sin')
+    #parser.add_argument('--patience', type=int, default=10)
+    #parser.add_argument('--ratio_loss_gain', type=float, default=1.005)
     # baseline
     parser.add_argument('--num_encoder_layers', type=int, default=3)
     parser.add_argument('--num_hidden_decoder_layers', type=int, default=2)
@@ -70,7 +72,7 @@ def objective(trial):
 
 
 if __name__ == '__main__':
-    n_trials = 30
+    n_trials = 100
 
     optuna.logging.get_logger("optuna").addHandler(logging.StreamHandler(sys.stdout))
     now = datetime.now()

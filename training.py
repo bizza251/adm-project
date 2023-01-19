@@ -16,7 +16,6 @@ from models.utility import TourLossReinforce, ValidTourLossReinforce
 from utility import BatchGraphInput, custom_collate_fn
 
 
-
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 logging.basicConfig(
@@ -252,7 +251,10 @@ class Trainer:
 
     def do_train(self):
         writer = SummaryWriter(comment=self.tb_comment)
-        #j=0
+        
+        ratio_loss_gain = 1.005 #self.ratio_loss_gain
+        patience = 10 #self.patience
+        countdown_patience = patience
         
         for epoch in range(self.start_epoch, self.epochs):
             self.model.train()
@@ -283,10 +285,11 @@ class Trainer:
             new_best = eval_loss < self.best_loss
             logger.info(f"[epoch {epoch}] Eval loss: {eval_loss} | Min is {self.best_loss} (epoch {self.best_epoch})")
             if new_best:
-                    logger.info(f"[epoch {epoch}] New min eval loss: {eval_loss}")
-                    self.best_loss = eval_loss
-                    self.best_epoch = epoch
-                    self.save_checkpoint(epoch, True)
+                logger.info(f"[epoch {epoch}] New min eval loss: {eval_loss}")
+                prev_best_loss = self.best_loss
+                self.best_loss = eval_loss
+                self.best_epoch = epoch
+                self.save_checkpoint(epoch, True)
             
             self.update_metrics(metrics_results)
             for k, v in metrics_results.items():
@@ -294,7 +297,14 @@ class Trainer:
 
             if not new_best and epoch and epoch % self.save_epochs == 0:
                 self.save_checkpoint(epoch)
-        
+            print(f'RAPPORT PREV LOSS TO CURRENT {prev_best_loss/eval_loss}')
+            if not new_best or prev_best_loss/eval_loss > ratio_loss_gain:
+                countdown_patience -= 1
+                if countdown_patience <= 0:
+                    break
+            else:
+                countdown_patience = patience
+            
         self.save_checkpoint(epoch)
         logger.info("Training completed!")
         writer.close()
