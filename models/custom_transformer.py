@@ -290,7 +290,8 @@ class TSPCustomTransformer(nn.Module):
         sinkhorn_i=20,
         add_cross_attn=True,
         use_q_proj_ca=False,
-        positional_encoding='custom_sin',
+        positional_encoding='sin',
+        use_lsa_eval=True,
         **kwargs) -> None:
 
         super().__init__()
@@ -331,6 +332,7 @@ class TSPCustomTransformer(nn.Module):
         self.d_k = d_model / nhead
         self.sinkhorn_tau = sinkhorn_tau
         self.sinkhorn_i = sinkhorn_i
+        self.use_lsa_eval = use_lsa_eval
         
         self._handle_sin_pe()
 
@@ -352,7 +354,8 @@ class TSPCustomTransformer(nn.Module):
             sinkhorn_i=args.sinkhorn_i,
             add_cross_attn=args.add_cross_attn,
             use_q_proj_ca=args.use_q_proj_ca,
-            positional_encoding=args.positional_encoding)
+            positional_encoding=args.positional_encoding,
+            use_lsa_eval=args.use_lsa_eval)
 
 
     def encode(self, key_value, attn_mask=None):
@@ -369,7 +372,7 @@ class TSPCustomTransformer(nn.Module):
         attn_matrix = sinkhorn(attn_matrix, self.sinkhorn_tau, self.sinkhorn_i)
         bsz, nodes = x.shape[:2]
         tour = torch.empty((bsz, nodes), requires_grad=False)
-        if self.training:
+        if self.training or not self.use_lsa_eval:
             # build tour using soft permutation matrix with sinkhorn algorithm
             node_idx = torch.arange(nodes, device=x.device).expand(bsz, -1)
             idx = torch.argmax(attn_matrix, dim=2)
