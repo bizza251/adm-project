@@ -192,5 +192,13 @@ def len_to_gt_len_ratio(model_output, batch):
 
 
 
+def valid_tour_ratio(model_output, batch):
+    tours = model_output[0]
+    expected_unique_nodes = tours.shape[1] - 1
+    unique_nodes = torch.tensor([len(set(x.tolist())) for x in tours])
+    return ((unique_nodes == expected_unique_nodes).sum() / tours.shape[0]).item()               
+
+
+
 if __name__ == '__main__':
     create_random_dataset('ALL_tsp/random/train_debug', int(1e2), 50, 2)
