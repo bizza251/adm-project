@@ -291,7 +291,6 @@ class TSPCustomTransformer(nn.Module):
         add_cross_attn=True,
         use_q_proj_ca=False,
         positional_encoding='sin',
-        use_lsa_eval=True,
         **kwargs) -> None:
 
         super().__init__()
@@ -332,7 +331,6 @@ class TSPCustomTransformer(nn.Module):
         self.d_k = d_model / nhead
         self.sinkhorn_tau = sinkhorn_tau
         self.sinkhorn_i = sinkhorn_i
-        self.use_lsa_eval = use_lsa_eval
         
         self._handle_sin_pe()
 
@@ -354,8 +352,7 @@ class TSPCustomTransformer(nn.Module):
             sinkhorn_i=args.sinkhorn_i,
             add_cross_attn=args.add_cross_attn,
             use_q_proj_ca=args.use_q_proj_ca,
-            positional_encoding=args.positional_encoding,
-            use_lsa_eval=args.use_lsa_eval)
+            positional_encoding=args.positional_encoding)
 
 
     def encode(self, key_value, attn_mask=None):
@@ -372,15 +369,9 @@ class TSPCustomTransformer(nn.Module):
         attn_matrix = sinkhorn(attn_matrix, self.sinkhorn_tau, self.sinkhorn_i)
         bsz, nodes = x.shape[:2]
         tour = torch.empty((bsz, nodes), requires_grad=False)
-        if self.training or not self.use_lsa_eval:
-            # build tour using soft permutation matrix with sinkhorn algorithm
-            node_idx = torch.arange(nodes, device=x.device).expand(bsz, -1)
-            idx = torch.argmax(attn_matrix, dim=2)
-            tour = torch.gather(node_idx, 1, idx)
-        else:
-            # build tour using hard permutation matrix with hungarian algorithm
-            for i in range(tour.shape[0]):
-                tour[i] = torch.tensor(linear_sum_assignment(-attn_matrix[i].detach().cpu().numpy())[1])
+        # build tour using hard permutation matrix with hungarian algorithm
+        for i in range(tour.shape[0]):
+            tour[i] = torch.tensor(linear_sum_assignment(-attn_matrix[i].detach().cpu().numpy())[1])
         tour = torch.cat((tour, tour[:, 0:1]), dim=1)
         return tour.cpu().to(torch.long), attn_matrix
         

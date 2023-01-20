@@ -46,7 +46,6 @@ if __name__ == '__main__':
     parser.add_argument('--add_cross_attn', type=bool, default=True)
     parser.add_argument('--use_q_proj_ca', type=bool, default=False)
     parser.add_argument('--positional_encoding', type=str, choices=['sin', 'custom_sin', 'custom'], default='custom_sin')
-    parser.add_argument('--use_lsa_eval', action='store_true')
     # baseline
     parser.add_argument('--num_encoder_layers', type=int, default=3)
     parser.add_argument('--num_hidden_decoder_layers', type=int, default=2)
