@@ -21,6 +21,7 @@ generated/
 generated_train/
 normalized/
 .eggs/
+tuning*
 lib/
 lib64/
 parts/
