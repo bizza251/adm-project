@@ -253,12 +253,13 @@ class Trainer:
         writer = SummaryWriter(comment=self.tb_comment)
         
         ratio_loss_gain = 1.005 #self.ratio_loss_gain
-        patience = 10 #self.patience
+        patience = 3 #self.patience
         countdown_patience = patience
         
         for epoch in range(self.start_epoch, self.epochs):
             self.model.train()
             
+            prev_best_loss = 10e5
             epoch_loss = 0
             n_samples = 0
             n_batches = 0
@@ -281,6 +282,8 @@ class Trainer:
             writer.add_scalar("Loss/train", epoch_loss, epoch)
 
             eval_loss, metrics_results = self.do_eval()
+            if eval_loss == 0:
+                eval_loss = 10e5
             writer.add_scalar("Loss/eval", eval_loss, epoch)
             new_best = eval_loss < self.best_loss
             logger.info(f"[epoch {epoch}] Eval loss: {eval_loss} | Min is {self.best_loss} (epoch {self.best_epoch})")
