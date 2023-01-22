@@ -80,8 +80,8 @@ class CustomPositionalEncoding(nn.Module):
             x: Tensor, shape [batch_size, seq_len, embedding_dim]
         """
         bsz, l = x.shape[:2]
-        idx = torch.arange(l, dtype=torch.float32).expand(bsz, -1).unsqueeze(-1)
-        return self.proj(idx)
+        idx = torch.arange(l, dtype=x.dtype, device=x.device).expand(bsz, -1).unsqueeze(-1)
+        return self.proj(idx / idx.max())
 
 
 def get_positional_encoding(positional_encoding: str, d_model: int, max_len: int = 5000, *args, **kwargs):
@@ -89,7 +89,7 @@ def get_positional_encoding(positional_encoding: str, d_model: int, max_len: int
         return SinPositionalEncoding(d_model, max_len)
     elif positional_encoding == 'custom_sin':
         return CustomSinPositionalEncoding(d_model, max_len)
-    elif positional_encoding == 'custom_sin':
+    elif positional_encoding == 'custom':
         return CustomPositionalEncoding(d_model)
 
 
