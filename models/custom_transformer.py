@@ -10,7 +10,7 @@ from torch.nn.functional import dropout, linear, softmax
 from models.activation import sinkhorn
 from models.layer import CustomPositionalEncoding, CustomSinPositionalEncoding, SinPositionalEncoding, get_positional_encoding
 from scipy.optimize import linear_sum_assignment
-from models.utility import TourLoss, get_node_mask
+from models.utility import TourLoss, get_node_mask, TourModelOutput
 from math import sqrt
 from torch.distributions import Categorical
 
@@ -25,7 +25,8 @@ def custom_multi_head_attn(
     nhead: int = 1,
     mask: Tensor = None,                   # (N, TL, SL)
     dropout_p: float = 0.0,
-    training: bool = True):
+    training: bool = True,
+    clip_logit_c: int = None):
 
     bsz, tgt_len, embd_dim = query.shape
     _, key_value_len, _ = key.shape
@@ -38,6 +39,8 @@ def custom_multi_head_attn(
 
     attn = torch.bmm(q, k.transpose(-2, -1))
     attn /= sqrt(embd_dim)
+    if clip_logit_c is not None:
+        attn = clip_logit_c * torch.tanh(attn)
     if mask is not None:
         mask = torch.repeat_interleave(mask, nhead, dim=0)
         attn = attn + mask
@@ -61,13 +64,15 @@ class CustomMHA(nn.Module):
         dropout_p: float = 0.0,
         use_q_proj: float = True, 
         use_kv_proj: float = True,
-        is_self_attn: float = True) -> None:
+        is_self_attn: float = True,
+        clip_logit_c: int = None) -> None:
         
         super().__init__()
         assert embd_dim % nhead == 0, "Embedding dimension must be divisible for the number of heads."
         self.embd_dim = embd_dim
         self.nhead = nhead
         self.dropout_p = dropout_p
+        self.clip_logit_c = clip_logit_c
 
         if is_self_attn: 
             self.qkv_proj = nn.Linear(embd_dim, 3 * embd_dim)
@@ -107,7 +112,7 @@ class CustomMHA(nn.Module):
                 key, value = torch.split(kv, self.embd_dim, -1)
             
         out, attn = custom_multi_head_attn(query, key, value, self.out_proj_weight, self.out_proj_bias, self.nhead, attn_mask,
-            self.dropout_p, self.training) 
+            self.dropout_p, self.training, self.clip_logit_c) 
         return out, attn, (key, value)
 
 
@@ -140,11 +145,12 @@ class TSPCustomEncoderBlock(nn.Module):
         use_q_proj=True, 
         use_feedforward_block=True,
         use_q_residual=True,
-        is_self_attn=True) -> None:
+        is_self_attn=True,
+        clip_logit_c_ca: int = None) -> None:
 
         super().__init__()
 
-        self.attn = CustomMHA(d_model, nhead, dropout_p, use_q_proj, is_self_attn=is_self_attn)
+        self.attn = CustomMHA(d_model, nhead, dropout_p, use_q_proj, is_self_attn=is_self_attn, clip_logit_c=clip_logit_c_ca)
         self.norm = LayerNorm(d_model, layer_norm_eps)
         if use_feedforward_block:
             self.ff_block = TransformerFeedforwardBlock(
@@ -183,7 +189,8 @@ class TSPCustomEncoderLayer(nn.Module):
         use_q_residual_sa=True,
         use_q_residual_ca=True,
         dropout_p_sa=0.1,
-        dropout_p_ca=0.1) -> None:
+        dropout_p_ca=0.1,
+        clip_logit_c_ca=None) -> None:
 
         super().__init__()
         self.encoder_block = TSPCustomEncoderBlock(
@@ -211,7 +218,8 @@ class TSPCustomEncoderLayer(nn.Module):
                 use_q_proj_ca,
                 use_feedforward_block_ca,
                 use_q_residual=use_q_residual_ca,
-                is_self_attn=False)
+                is_self_attn=False,
+                clip_logit_c_ca=clip_logit_c_ca)
 
         self.use_q_residual = use_q_residual_sa and use_q_residual_ca
 
@@ -248,7 +256,7 @@ class TSPCustomEncoder(nn.Module):
                 norm_first,
                 add_cross_attn,
                 use_q_proj_ca,
-                use_feedforward_block_sa=False,
+                use_feedforward_block_sa=True,
                 use_feedforward_block_ca=True,
                 use_q_residual_sa=False,
                 use_q_residual_ca=False,
@@ -296,6 +304,7 @@ class TSPCustomTransformer(nn.Module):
 
         super().__init__()
         self.pe = get_positional_encoding(positional_encoding, d_model)
+        self.pe_norm = nn.LayerNorm(d_model, layer_norm_eps)
         self.input_ff = nn.Linear(in_features=in_features, out_features=d_model)
         self.input_norm = nn.LayerNorm(d_model, layer_norm_eps)
         self.pos_enc_norm = nn.LayerNorm(d_model, layer_norm_eps)
@@ -320,7 +329,7 @@ class TSPCustomTransformer(nn.Module):
             norm_first,
             True,
             use_q_proj_ca,
-            use_feedforward_block_sa=False,
+            use_feedforward_block_sa=True,
             use_feedforward_block_ca=False,
             use_q_residual_sa=False,
             use_q_residual_ca=False,
@@ -361,6 +370,7 @@ class TSPCustomTransformer(nn.Module):
     def encode(self, key_value, attn_mask=None):
         key_value = self.input_ff(key_value)
         query = self.pe(key_value)
+        query = self.pe_norm(query)
         query = query.expand(len(key_value), *query.shape[1:])
         memory, attn_weight = self.encoder(query, key_value, attn_mask)
         memory, attn_weight, _ = self.head(query, memory, attn_mask)
@@ -368,11 +378,14 @@ class TSPCustomTransformer(nn.Module):
 
 
     def forward(self, x, attn_mask=None):
-        _, attn_matrix = self.encode(x, attn_mask)
-        attn_matrix = sinkhorn(attn_matrix, self.sinkhorn_tau, self.sinkhorn_i)
         bsz, nodes = x.shape[:2]
+        # x = x[:, torch.randperm(nodes, device=x.device)]
+        _, attn_matrix = self.encode(x, attn_mask)
+        attn_matrix = torch.softmax(torch.tanh(attn_matrix) * 10, dim=-1)
+        attn_matrix = sinkhorn(attn_matrix, self.sinkhorn_tau, self.sinkhorn_i)
         tour = torch.empty((bsz, nodes), requires_grad=False)
-        if self.training or not self.use_lsa_eval:
+        # if self.training or not self.use_lsa_eval:
+        if False:
             # build tour using soft permutation matrix with sinkhorn algorithm
             node_idx = torch.arange(nodes, device=x.device).expand(bsz, -1)
             idx = torch.argmax(attn_matrix, dim=2)
@@ -380,9 +393,13 @@ class TSPCustomTransformer(nn.Module):
         else:
             # build tour using hard permutation matrix with hungarian algorithm
             for i in range(tour.shape[0]):
-                tour[i] = torch.tensor(linear_sum_assignment(-attn_matrix[i].detach().cpu().numpy())[1])
-        tour = torch.cat((tour, tour[:, 0:1]), dim=1)
-        return tour.cpu().to(torch.long), attn_matrix
+                tour[i] = torch.tensor(linear_sum_assignment(attn_matrix[i].detach().cpu().numpy(), maximize=True)[1])
+        tour = torch.cat((tour, tour[:, 0:1]), dim=1).to(attn_matrix.device).to(torch.long)
+        sum_probs = torch.gather(attn_matrix, -1, tour[..., :-1].view(bsz, nodes, 1)).log().sum((1, 2))
+        return TourModelOutput(
+            tour=tour.cpu(),
+            sum_probs=sum_probs,
+            attn_matrix=attn_matrix)
         
 
 
@@ -402,7 +419,8 @@ class TSPTransformer(nn.Module):
             norm_first=args.norm_first,
             num_encoder_layers=args.num_encoder_layers,
             num_decoder_layers=args.num_hidden_decoder_layers,
-            positional_encoding='sin')
+            positional_encoding='sin',
+            clip_logit_c=args.clip_logit_c)
 
 
     def __init__(self,
@@ -417,6 +435,7 @@ class TSPTransformer(nn.Module):
         num_encoder_layers=3,
         num_hidden_decoder_layers=None,
         positional_encoding='sin',
+        clip_logit_c=None,
         **kwargs) -> None:
 
         super().__init__()
@@ -466,7 +485,8 @@ class TSPTransformer(nn.Module):
                 use_feedforward_block_sa=False,
                 use_feedforward_block_ca=False,
                 dropout_p_sa=dropout_p,
-                dropout_p_ca=0.
+                dropout_p_ca=0.,
+                clip_logit_c_ca=clip_logit_c
             )
 
         self.start_node = nn.Parameter(torch.rand(d_model))
@@ -484,10 +504,11 @@ class TSPTransformer(nn.Module):
         use_cache = any(key_value_cache)
         for i, layer in enumerate(self.decoder):
             query, _, cached_key_value = layer(query, key_value, mask, cached_key_value=key_value_cache[i] if use_cache else None)
-            key_value_cache.append(cached_key_value)
+            if len(key_value_cache) < len(self.decoder):
+                key_value_cache.append(cached_key_value)
         last_cached_key_value = key_value_cache[-1] if use_cache else None
         attn_out, attn_weight, cached_key_value = self.head(query, key_value, mask, cached_key_value=last_cached_key_value)
-        if not use_cache:
+        if len(key_value_cache) < len(self.decoder) + 1:
             key_value_cache.append(cached_key_value)
         return attn_out, attn_weight, key_value_cache
 
@@ -520,7 +541,11 @@ class TSPTransformer(nn.Module):
                 tour[:, t + 1] = last_idxs
                 tour[:, -1] = tour[:, 0]
                 log_probs[:, t + 1] = attn_weight[zero2bsz, :, last_idxs].view(-1)
-        return tour, log_probs.sum(dim=-1)
+        # return tour, log_probs.log().sum(dim=-1)
+        return TourModelOutput(
+            tour=tour,
+            sum_probs=log_probs.log().sum(dim=-1)
+        )
 
 
 

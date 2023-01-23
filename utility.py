@@ -179,13 +179,13 @@ def get_tour_len(tour: Tensor) -> Tensor:
         Tensor: shape (N), contains the length of each tour in the batch.
     """   
     bsz, _, features = tour.shape 
-    diff = torch.diff(tour, dim=1, append=torch.zeros(bsz, 1, features, device=tour.device))
+    diff = torch.diff(tour, dim=1)
     return diff.square().sum(dim=-1).sqrt().sum(dim=-1)
 
 
 
 def len_to_gt_len_ratio(model_output, batch):
-    tours = model_output[0]
+    tours = model_output.tour
     tour_coords = batch.coords[torch.arange(len(tours)).view(-1, 1), tours]
     tour_len = get_tour_len(tour_coords)
     return (tour_len.cpu() / batch.gt_len).mean().item()
@@ -193,7 +193,7 @@ def len_to_gt_len_ratio(model_output, batch):
 
 
 def valid_tour_ratio(model_output, batch):
-    tours = model_output[0]
+    tours = model_output.tour
     expected_unique_nodes = tours.shape[1] - 1
     unique_nodes = torch.tensor([len(set(x.tolist())) for x in tours])
     return ((unique_nodes == expected_unique_nodes).sum() / tours.shape[0]).item()               

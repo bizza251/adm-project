@@ -306,7 +306,7 @@ class Trainer:
 class ReinforceTrainer(Trainer):
 
     def build_loss_input(self, batch, model_output):
-        tours, sum_log_probs = model_output
+        tours, sum_log_probs = model_output.tour, model_output.sum_probs
         inputs = (sum_log_probs,)
         coords, gt_len = batch.coords, batch.gt_len
         targets = (coords[torch.arange(len(tours)).view(-1, 1), tours], gt_len.to(sum_log_probs.device))
@@ -317,11 +317,10 @@ class ReinforceTrainer(Trainer):
 class CustomReinforceTrainer(Trainer):
 
     def build_loss_input(self, batch, model_output):
-        tours, attn_matrix = model_output
-        sum_log_probs = torch.max(attn_matrix, dim=-1)[0].sum(dim=-1)
+        tours, sum_probs, attn_matrix = model_output.tour, model_output.sum_probs, model_output.attn_matrix
         coords, gt_len = batch.coords, batch.gt_len
-        inputs = (sum_log_probs, coords[torch.arange(len(tours)).view(-1, 1), tours], tours)
-        targets = (gt_len.to(sum_log_probs.device), attn_matrix)
+        inputs = (sum_probs, coords[torch.arange(len(tours)).view(-1, 1), tours], tours, batch.gt_tour)
+        targets = (gt_len.to(sum_probs.device), attn_matrix)
         return inputs, targets
 
 

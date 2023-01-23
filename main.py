@@ -50,6 +50,7 @@ if __name__ == '__main__':
     # baseline
     parser.add_argument('--num_encoder_layers', type=int, default=3)
     parser.add_argument('--num_hidden_decoder_layers', type=int, default=2)
+    parser.add_argument('--clip_logit_c', type=int, default=None)
 
     args = parser.parse_args()
 
