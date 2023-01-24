@@ -33,12 +33,13 @@ def custom_multi_head_attn(
     assert embd_dim % nhead == 0, "Embedding dimension must be divisible for the number of heads"
     head_dim = embd_dim // nhead
     k, v = key, value
+    
     q = query.contiguous().view(tgt_len, bsz * nhead, head_dim).transpose(0, 1)
     k = k.contiguous().view(key_value_len, bsz * nhead, head_dim).transpose(0, 1)
     v = v.contiguous().view(key_value_len, bsz * nhead, head_dim).transpose(0, 1)
 
     attn = torch.bmm(q, k.transpose(-2, -1))
-    attn /= sqrt(embd_dim)
+    attn /= sqrt(head_dim)
     if clip_logit_c is not None:
         attn = clip_logit_c * torch.tanh(attn)
     if mask is not None:
@@ -51,8 +52,8 @@ def custom_multi_head_attn(
         attn = dropout(attn, p=dropout_p)
     out = torch.bmm(attn, v)
     out = out.transpose(0, 1).contiguous().view(bsz, tgt_len, embd_dim)
-    if nhead > 1:
-        out = linear(out, out_proj_weight, out_proj_bias)
+    # if nhead > 1:
+    #     out = linear(out, out_proj_weight, out_proj_bias)
     return out, attn
 
 
