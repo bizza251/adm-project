@@ -11,7 +11,7 @@ from torch.optim.lr_scheduler import LambdaLR
 import os
 
 from torch.utils.tensorboard import SummaryWriter
-from utility import BatchGraphInput, custom_collate_fn, len_to_gt_len_ratio, valid_tour_ratio
+from utility import BatchGraphInput, avg_tour_len, custom_collate_fn, len_to_gt_len_ratio, valid_tour_ratio
 from models.utility import TourLossReinforce, ValidTourLossReinforce
 from utility import BatchGraphInput, custom_collate_fn
 
@@ -320,7 +320,7 @@ class CustomReinforceTrainer(Trainer):
         tours, sum_probs, attn_matrix = model_output.tour, model_output.sum_probs, model_output.attn_matrix
         coords, gt_len = batch.coords, batch.gt_len
         inputs = (sum_probs, coords[torch.arange(len(tours)).view(-1, 1), tours], tours, batch.gt_tour)
-        targets = (gt_len.to(sum_probs.device), attn_matrix)
+        targets = (gt_len.to(sum_probs.device), attn_matrix, batch.coords)
         return inputs, targets
 
 
@@ -437,6 +437,8 @@ def get_metrics(args):
                 metrics[metric] = len_to_gt_len_ratio
             elif metric == 'valid_tour_ratio':
                 metrics[metric] = valid_tour_ratio
+            elif metric == 'avg_tour_len':
+                metrics[metric] = avg_tour_len
             else:
                 # TODO: eventually add other metrics
                 raise NotImplementedError()
