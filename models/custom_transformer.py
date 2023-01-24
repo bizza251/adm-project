@@ -53,8 +53,8 @@ def custom_multi_head_attn(
     out = torch.bmm(attn, v)
     # attn_output = attn_output.transpose(0, 1).contiguous().view(tgt_len, bsz, embed_dim)
     out = out.transpose(0, 1).contiguous().view(bsz, tgt_len, embd_dim)
-    if nhead > 1 and out_proj_weight is not None:
-        out = linear(out, out_proj_weight, out_proj_bias)
+    # if nhead > 1 and out_proj_weight is not None:
+    #     out = linear(out, out_proj_weight, out_proj_bias)
     return out, attn
 
 
@@ -448,6 +448,56 @@ class TSPCustomTransformer(nn.Module):
         
 
 
+class TSPDecoderLayer(nn.Module):
+
+    def __init__(
+        self,
+        d_model,
+        nhead,
+        dim_feedforward,
+        dropout_p,
+        activation,
+        norm,
+        norm_eps,
+    ) -> None:
+        super().__init__()
+
+        self.partial_tour_ca_block = TSPCustomEncoderBlock(
+            d_model,
+            nhead,
+            dim_feedforward,
+            dropout_p,
+            activation,
+            norm,
+            norm_eps,
+            use_q_proj=True,
+            use_feedforward_block=False,
+            use_q_residual=True,
+            is_self_attn=False
+        )
+
+        self.encoder_ca_block = TSPCustomEncoderBlock(
+            d_model,
+            nhead,
+            dim_feedforward,
+            dropout_p,
+            activation,
+            norm,
+            norm_eps,
+            use_q_proj=True,
+            use_feedforward_block=True,
+            use_q_residual=True,
+            is_self_attn=False
+        )
+
+
+    def forward(self, query, key_value_partial_tour, key_value, mask=None, **kwargs):
+        out, _, __ = self.partial_tour_ca_block(query, key_value_partial_tour)
+        out, attn_weight, cached_key_value = self.encoder_ca_block(out, key_value, **kwargs)
+        return out, attn_weight, cached_key_value
+
+
+
 class TSPTransformer(nn.Module):
 
     @classmethod
@@ -504,38 +554,27 @@ class TSPTransformer(nn.Module):
         ])
 
         self.decoder = nn.ModuleList([
-            TSPCustomEncoderLayer(
+            TSPDecoderLayer(
                 d_model,
-                nhead,
-                dim_feedforward,
+                nhead,dim_feedforward,
+                dropout_p,
                 activation,
                 'layer',
-                norm_eps,
-                add_cross_attn=True,
-                use_q_proj_ca=True,
-                use_feedforward_block_sa=False,
-                use_feedforward_block_ca=True,
-                dropout_p_sa=dropout_p,
-                dropout_p_ca=dropout_p,
+                norm_eps
             )
             for _ in range(num_decoder_layers)
         ])   
 
-        self.head = TSPCustomEncoderLayer(
-                d_model,
-                1,
-                None,
-                activation,
-                'layer',
-                norm_eps,
-                add_cross_attn=True,
-                use_q_proj_ca=True,
-                use_feedforward_block_sa=False,
-                use_feedforward_block_ca=False,
-                dropout_p_sa=dropout_p,
-                dropout_p_ca=0.,
-                clip_logit_c_ca=clip_logit_c
-            )
+        self.head = TSPCustomEncoderBlock(
+            d_model,
+            1,
+            dim_feedforward,
+            0.,
+            activation,
+            use_feedforward_block=False,
+            is_self_attn=False,
+            clip_logit_c_ca=clip_logit_c
+        )
 
         self.start_node = nn.Parameter(torch.rand(d_model))
         self.register_buffer('PE', self.pe(torch.zeros(1, 5000, d_model)))    
@@ -550,8 +589,9 @@ class TSPTransformer(nn.Module):
     def decode(self, query, key_value, mask=None, key_value_cache=None):
         key_value_cache = key_value_cache if key_value_cache else []
         use_cache = any(key_value_cache)
+        query, partial_tour_key_value = query[:, -1:], query
         for i, layer in enumerate(self.decoder):
-            query, _, cached_key_value = layer(query, key_value, mask, cached_key_value=key_value_cache[i] if use_cache else None)
+            query, _, cached_key_value = layer(query, partial_tour_key_value, key_value, mask, cached_key_value=key_value_cache[i] if use_cache else None)
             if len(key_value_cache) < len(self.decoder):
                 key_value_cache.append(cached_key_value)
         last_cached_key_value = key_value_cache[-1] if use_cache else None
@@ -564,7 +604,7 @@ class TSPTransformer(nn.Module):
     def forward(self, x):
         x = self.input_ff(x)
         key_value = self.encode(x)
-        query = self.start_node.expand(len(x), 1, -1)
+        query = self.start_node.expand(len(x), 1, -1) + self.PE[:, 0]
         bsz, n_nodes, _ = x.shape
         zero2bsz = torch.arange(bsz)
         tour = torch.empty((bsz, n_nodes + 1), dtype=torch.long)
@@ -573,9 +613,9 @@ class TSPTransformer(nn.Module):
         key_value_cache = None
         for t in range(n_nodes - 1):
             if t > 0:
-                query = key_value[zero2bsz, idxs].view(bsz, 1, -1)
-            query_pe = query + self.PE[:, t]
-            _, attn_weight, key_value_cache = self.decode(query_pe, key_value, visited_node_mask, key_value_cache=key_value_cache)
+                query = torch.concat([query, key_value[zero2bsz, idxs].view(bsz, 1, -1) + self.PE[:, t]], dim=1)
+            # query_pe = query + self.PE[:, t]
+            _, attn_weight, key_value_cache = self.decode(query, key_value, visited_node_mask, key_value_cache=key_value_cache)
             if self.training:
                 idxs = Categorical(probs=attn_weight).sample()
             else:
