@@ -11,7 +11,7 @@ from torch.optim.lr_scheduler import LambdaLR
 import os
 
 from torch.utils.tensorboard import SummaryWriter
-from utility import BatchGraphInput, custom_collate_fn, len_to_gt_len_ratio, valid_tour_ratio
+from utility import BatchGraphInput, avg_tour_len, custom_collate_fn, len_to_gt_len_ratio, valid_tour_ratio
 from models.utility import TourLossReinforce, ValidTourLossReinforce
 from utility import BatchGraphInput, custom_collate_fn
 
@@ -306,7 +306,7 @@ class Trainer:
 class ReinforceTrainer(Trainer):
 
     def build_loss_input(self, batch, model_output):
-        tours, sum_log_probs = model_output
+        tours, sum_log_probs = model_output.tour, model_output.sum_probs
         inputs = (sum_log_probs,)
         coords, gt_len = batch.coords, batch.gt_len
         targets = (coords[torch.arange(len(tours)).view(-1, 1), tours], gt_len.to(sum_log_probs.device))
@@ -317,11 +317,10 @@ class ReinforceTrainer(Trainer):
 class CustomReinforceTrainer(Trainer):
 
     def build_loss_input(self, batch, model_output):
-        tours, attn_matrix = model_output
-        sum_log_probs = torch.max(attn_matrix, dim=-1)[0].sum(dim=-1)
+        tours, sum_probs, attn_matrix = model_output.tour, model_output.sum_probs, model_output.attn_matrix
         coords, gt_len = batch.coords, batch.gt_len
-        inputs = (sum_log_probs, coords[torch.arange(len(tours)).view(-1, 1), tours], tours)
-        targets = (gt_len.to(sum_log_probs.device),)
+        inputs = (sum_probs, coords[torch.arange(len(tours)).view(-1, 1), tours], tours, batch.gt_tour)
+        targets = (gt_len.to(sum_probs.device), attn_matrix, batch.coords)
         return inputs, targets
 
 
@@ -438,6 +437,8 @@ def get_metrics(args):
                 metrics[metric] = len_to_gt_len_ratio
             elif metric == 'valid_tour_ratio':
                 metrics[metric] = valid_tour_ratio
+            elif metric == 'avg_tour_len':
+                metrics[metric] = avg_tour_len
             else:
                 # TODO: eventually add other metrics
                 raise NotImplementedError()

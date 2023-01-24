@@ -10,7 +10,7 @@ from torch.nn.functional import dropout, linear, softmax
 from models.activation import sinkhorn
 from models.layer import CustomPositionalEncoding, CustomSinPositionalEncoding, SinPositionalEncoding, get_positional_encoding
 from scipy.optimize import linear_sum_assignment
-from models.utility import TourLoss, get_node_mask
+from models.utility import TourLoss, get_node_mask, TourModelOutput
 from math import sqrt
 from torch.distributions import Categorical
 
@@ -25,19 +25,23 @@ def custom_multi_head_attn(
     nhead: int = 1,
     mask: Tensor = None,                   # (N, TL, SL)
     dropout_p: float = 0.0,
-    training: bool = True):
+    training: bool = True,
+    clip_logit_c: int = None):
 
     bsz, tgt_len, embd_dim = query.shape
     _, key_value_len, _ = key.shape
     assert embd_dim % nhead == 0, "Embedding dimension must be divisible for the number of heads"
     head_dim = embd_dim // nhead
     k, v = key, value
+    
     q = query.contiguous().view(tgt_len, bsz * nhead, head_dim).transpose(0, 1)
     k = k.contiguous().view(key_value_len, bsz * nhead, head_dim).transpose(0, 1)
     v = v.contiguous().view(key_value_len, bsz * nhead, head_dim).transpose(0, 1)
 
     attn = torch.bmm(q, k.transpose(-2, -1))
-    attn /= sqrt(embd_dim)
+    attn /= sqrt(head_dim)
+    if clip_logit_c is not None:
+        attn = clip_logit_c * torch.tanh(attn)
     if mask is not None:
         mask = torch.repeat_interleave(mask, nhead, dim=0)
         attn = attn + mask
@@ -47,8 +51,9 @@ def custom_multi_head_attn(
     if dropout_p > 0.0:
         attn = dropout(attn, p=dropout_p)
     out = torch.bmm(attn, v)
+    # attn_output = attn_output.transpose(0, 1).contiguous().view(tgt_len, bsz, embed_dim)
     out = out.transpose(0, 1).contiguous().view(bsz, tgt_len, embd_dim)
-    if nhead > 1:
+    if nhead > 1 and out_proj_weight is not None:
         out = linear(out, out_proj_weight, out_proj_bias)
     return out, attn
 
@@ -61,13 +66,15 @@ class CustomMHA(nn.Module):
         dropout_p: float = 0.0,
         use_q_proj: float = True, 
         use_kv_proj: float = True,
-        is_self_attn: float = True) -> None:
+        is_self_attn: float = True,
+        clip_logit_c: int = None) -> None:
         
         super().__init__()
         assert embd_dim % nhead == 0, "Embedding dimension must be divisible for the number of heads."
         self.embd_dim = embd_dim
         self.nhead = nhead
         self.dropout_p = dropout_p
+        self.clip_logit_c = clip_logit_c
 
         if is_self_attn: 
             self.qkv_proj = nn.Linear(embd_dim, 3 * embd_dim)
@@ -107,20 +114,55 @@ class CustomMHA(nn.Module):
                 key, value = torch.split(kv, self.embd_dim, -1)
             
         out, attn = custom_multi_head_attn(query, key, value, self.out_proj_weight, self.out_proj_bias, self.nhead, attn_mask,
-            self.dropout_p, self.training) 
+            self.dropout_p, self.training, self.clip_logit_c) 
         return out, attn, (key, value)
+
+
+
+class CustomBatchNorm(nn.Module):
+
+    def __init__(self, d_model, norm_eps=1e-5):
+        super().__init__()
+        self.bn = nn.BatchNorm1d(d_model, norm_eps)
+
+    
+    def forward(self, x):
+        x = x.transpose(1, 2)
+        x = self.bn(x)
+        return x.transpose(1, 2)
+
+    
+
+def get_norm_layer(norm: str, d_model: int, norm_eps: float = 1e-5):
+    if norm == 'layer':
+        return nn.LayerNorm(d_model, norm_eps)
+    elif norm == 'batch':
+        return nn.BatchNorm1d(d_model, norm_eps)
+    elif norm == 'custom_batch':
+        return CustomBatchNorm(d_model, norm_eps)
+    else:
+        raise NotImplementedError()
 
 
 
 class TransformerFeedforwardBlock(nn.Module):
 
-    def __init__(self, d_model, dim_feedforward, activation=F.relu, layer_norm_eps=1e-5, dropout_p=0.1) -> None:
+    def __init__(
+        self,
+        d_model, 
+        dim_feedforward, 
+        activation=F.relu,
+        norm='layer', 
+        norm_eps=1e-5, 
+        dropout_p=0.1
+    ) -> None:
         super().__init__()
         self.activation = activation
         self.linear1 = Linear(d_model, dim_feedforward)
         self.linear2 = Linear(dim_feedforward, d_model)
-        self.norm = LayerNorm(d_model, layer_norm_eps)
+        self.norm = get_norm_layer(norm, d_model, norm_eps)
         self.dropout = Dropout(dropout_p)
+
 
     def forward(self, x: Tensor, **kwargs) -> Tensor:
         out = self.dropout(self.linear2(self.activation(self.linear1(x))))
@@ -135,23 +177,25 @@ class TSPCustomEncoderBlock(nn.Module):
         dim_feedforward=1024, 
         dropout_p=0.1, 
         activation=F.relu, 
-        layer_norm_eps=1e-5,
-        norm_first=False,
+        norm='layer',
+        norm_eps=1e-5,
         use_q_proj=True, 
         use_feedforward_block=True,
         use_q_residual=True,
-        is_self_attn=True) -> None:
+        is_self_attn=True,
+        clip_logit_c_ca: int = None) -> None:
 
         super().__init__()
 
-        self.attn = CustomMHA(d_model, nhead, dropout_p, use_q_proj, is_self_attn=is_self_attn)
-        self.norm = LayerNorm(d_model, layer_norm_eps)
+        self.attn = CustomMHA(d_model, nhead, dropout_p, use_q_proj, is_self_attn=is_self_attn, clip_logit_c=clip_logit_c_ca)
+        self.norm = get_norm_layer(norm, d_model, norm_eps)
         if use_feedforward_block:
             self.ff_block = TransformerFeedforwardBlock(
             d_model,
             dim_feedforward,
             activation,
-            layer_norm_eps,
+            norm,
+            norm_eps,
             dropout_p
            ) 
         self.use_feedforward_block = use_feedforward_block
@@ -174,8 +218,8 @@ class TSPCustomEncoderLayer(nn.Module):
         nhead, 
         dim_feedforward=1024, 
         activation=F.relu, 
-        layer_norm_eps=1e-5,
-        norm_first=False,
+        norm='layer',
+        norm_eps=1e-5,
         add_cross_attn=True,
         use_q_proj_ca=False,
         use_feedforward_block_sa=False,
@@ -183,35 +227,37 @@ class TSPCustomEncoderLayer(nn.Module):
         use_q_residual_sa=True,
         use_q_residual_ca=True,
         dropout_p_sa=0.1,
-        dropout_p_ca=0.1) -> None:
+        dropout_p_ca=0.1,
+        clip_logit_c_ca=None) -> None:
 
         super().__init__()
-        self.encoder_block = TSPCustomEncoderBlock(
+        self.sa_block = TSPCustomEncoderBlock(
             d_model, 
             nhead, 
             dim_feedforward, 
             dropout_p_sa, 
             activation, 
-            layer_norm_eps,
-            norm_first,
+            norm,
+            norm_eps,
             True,
             use_feedforward_block_sa,
             use_q_residual=use_q_residual_sa)
     
         self.add_cross_attn = add_cross_attn
         if add_cross_attn:
-            self.encoder_block_ca = TSPCustomEncoderBlock(
+            self.ca_block = TSPCustomEncoderBlock(
                 d_model, 
                 nhead, 
                 dim_feedforward, 
                 dropout_p_ca, 
                 activation, 
-                layer_norm_eps,
-                norm_first,
+                norm,
+                norm_eps,
                 use_q_proj_ca,
                 use_feedforward_block_ca,
                 use_q_residual=use_q_residual_ca,
-                is_self_attn=False)
+                is_self_attn=False,
+                clip_logit_c_ca=clip_logit_c_ca)
 
         self.use_q_residual = use_q_residual_sa and use_q_residual_ca
 
@@ -219,14 +265,14 @@ class TSPCustomEncoderLayer(nn.Module):
     def forward(self, query: Tensor, key_value: Tensor, attn_mask: Tensor = None, **kwargs):
         if self.use_q_residual:
             # vanilla transformer: query comes from decoder; key_value from encoder
-            query, attn_weight, _ = self.encoder_block(query, query, attn_mask=None, **kwargs)
+            query, attn_weight, _ = self.sa_block(query, query, attn_mask=None, **kwargs)
             attn_out = query
         else:
             # our implementation: query is the pos encoding, key_value is the output of the self-attention
-            key_value, attn_weight, _ = self.encoder_block(key_value, key_value, attn_mask=None, **kwargs)
+            key_value, attn_weight, _ = self.sa_block(key_value, key_value, attn_mask=None, **kwargs)
             attn_out = key_value
         if self.add_cross_attn:
-            attn_out, attn_weight, cached_key_value = self.encoder_block_ca(query, key_value, attn_mask, **kwargs)
+            attn_out, attn_weight, cached_key_value = self.ca_block(query, key_value, attn_mask, **kwargs)
         else:
             cached_key_value = None
         return attn_out, attn_weight, cached_key_value
@@ -234,8 +280,20 @@ class TSPCustomEncoderLayer(nn.Module):
 
 
 class TSPCustomEncoder(nn.Module):
-    def __init__(self, d_model, nhead, dim_feedforward=1024, dropout_p=0.1, activation=F.relu, layers=2, 
-            layer_norm_eps=1e-5, norm_first=False, add_cross_attn=True, use_q_proj_ca=False) -> None:
+    def __init__(
+        self, 
+        d_model, 
+        nhead, 
+        dim_feedforward=1024, 
+        dropout_p=0.1, 
+        activation=F.relu, 
+        layers=2, 
+        norm='layer', 
+        norm_eps=1e-5, 
+        add_cross_attn=True, 
+        use_q_proj_ca=False
+    ) -> None:
+
         super().__init__()
 
         self.layers = nn.ModuleList([
@@ -244,11 +302,11 @@ class TSPCustomEncoder(nn.Module):
                 nhead, 
                 dim_feedforward, 
                 activation, 
-                layer_norm_eps, 
-                norm_first,
+                norm,
+                norm_eps, 
                 add_cross_attn,
                 use_q_proj_ca,
-                use_feedforward_block_sa=False,
+                use_feedforward_block_sa=True,
                 use_feedforward_block_ca=True,
                 use_q_residual_sa=False,
                 use_q_residual_ca=False,
@@ -283,8 +341,8 @@ class TSPCustomTransformer(nn.Module):
         dim_feedforward=512,
         dropout_p=0.1,
         activation=F.relu,
-        layer_norm_eps=1e-5,
-        norm_first=False,
+        norm='layer',
+        norm_eps=1e-5,
         num_hidden_encoder_layers=2,
         sinkhorn_tau=5e-2,
         sinkhorn_i=20,
@@ -296,8 +354,8 @@ class TSPCustomTransformer(nn.Module):
         super().__init__()
         self.pe = get_positional_encoding(positional_encoding, d_model)
         self.input_ff = nn.Linear(in_features=in_features, out_features=d_model)
-        self.input_norm = nn.LayerNorm(d_model, layer_norm_eps)
-        self.pos_enc_norm = nn.LayerNorm(d_model, layer_norm_eps)
+        self.input_norm = get_norm_layer(norm, d_model, norm_eps)
+
         self.encoder = TSPCustomEncoder(
             d_model, 
             nhead, 
@@ -305,8 +363,8 @@ class TSPCustomTransformer(nn.Module):
             dropout_p, 
             activation, 
             num_hidden_encoder_layers, 
-            layer_norm_eps, 
-            norm_first,
+            norm,
+            norm_eps, 
             add_cross_attn,
             use_q_proj_ca)
         
@@ -315,11 +373,11 @@ class TSPCustomTransformer(nn.Module):
             1,
             dim_feedforward,
             activation,
-            layer_norm_eps,
-            norm_first,
+            norm_eps,
+            norm,
             True,
             use_q_proj_ca,
-            use_feedforward_block_sa=False,
+            use_feedforward_block_sa=True,
             use_feedforward_block_ca=False,
             use_q_residual_sa=False,
             use_q_residual_ca=False,
@@ -345,8 +403,8 @@ class TSPCustomTransformer(nn.Module):
             dim_feedforward=args.dim_feedforward,
             dropout_p=args.dropout_p,
             activation=activation,
-            layer_norm_eps=args.layer_norm_eps,
-            norm_first=args.norm_first,
+            norm=args.norm,
+            norm_eps=args.norm_eps,
             num_hidden_encoder_layers=args.num_hidden_encoder_layers,
             sinkhorn_tau=args.sinkhorn_tau,
             sinkhorn_i=args.sinkhorn_i,
@@ -358,6 +416,7 @@ class TSPCustomTransformer(nn.Module):
     def encode(self, key_value, attn_mask=None):
         key_value = self.input_ff(key_value)
         query = self.pe(key_value)
+        query = self.pe_norm(query)
         query = query.expand(len(key_value), *query.shape[1:])
         memory, attn_weight = self.encoder(query, key_value, attn_mask)
         memory, attn_weight, _ = self.head(query, memory, attn_mask)
@@ -365,15 +424,27 @@ class TSPCustomTransformer(nn.Module):
 
 
     def forward(self, x, attn_mask=None):
-        _, attn_matrix = self.encode(x, attn_mask)
-        attn_matrix = sinkhorn(attn_matrix, self.sinkhorn_tau, self.sinkhorn_i)
         bsz, nodes = x.shape[:2]
+        _, attn_matrix = self.encode(x, attn_mask)
+        # attn_matrix = torch.softmax(torch.tanh(attn_matrix) * 10, dim=-1)
+        attn_matrix = sinkhorn(attn_matrix, self.sinkhorn_tau, self.sinkhorn_i)
         tour = torch.empty((bsz, nodes), requires_grad=False)
-        # build tour using hard permutation matrix with hungarian algorithm
-        for i in range(tour.shape[0]):
-            tour[i] = torch.tensor(linear_sum_assignment(-attn_matrix[i].detach().cpu().numpy())[1])
-        tour = torch.cat((tour, tour[:, 0:1]), dim=1)
-        return tour.cpu().to(torch.long), attn_matrix
+        # if self.training or not self.use_lsa_eval:
+        if False:
+            # build tour using soft permutation matrix with sinkhorn algorithm
+            node_idx = torch.arange(nodes, device=x.device).expand(bsz, -1)
+            idx = torch.argmax(attn_matrix, dim=2)
+            tour = torch.gather(node_idx, 1, idx)
+        else:
+            # build tour using hard permutation matrix with hungarian algorithm
+            for i in range(tour.shape[0]):
+                tour[i] = torch.tensor(linear_sum_assignment(attn_matrix[i].detach().cpu().numpy(), maximize=True)[1])
+        tour = torch.cat((tour, tour[:, 0:1]), dim=1).to(attn_matrix.device).to(torch.long)
+        sum_probs = torch.gather(attn_matrix, -1, tour[..., :-1].view(bsz, nodes, 1)).log().sum((1, 2))
+        return TourModelOutput(
+            tour=tour.cpu(),
+            sum_probs=sum_probs,
+            attn_matrix=attn_matrix)
         
 
 
@@ -389,11 +460,12 @@ class TSPTransformer(nn.Module):
             dim_feedforward=args.dim_feedforward,
             dropout_p=args.dropout_p,
             activation=activation,
-            layer_norm_eps=args.layer_norm_eps,
-            norm_first=args.norm_first,
+            encoder_norm=args.norm,
+            norm_eps=args.norm_eps,
             num_encoder_layers=args.num_encoder_layers,
             num_decoder_layers=args.num_hidden_decoder_layers,
-            positional_encoding='sin')
+            positional_encoding='sin',
+            clip_logit_c=args.clip_logit_c)
 
 
     def __init__(self,
@@ -403,11 +475,13 @@ class TSPTransformer(nn.Module):
         dim_feedforward=512,
         dropout_p=0.1,
         activation=F.relu,
-        layer_norm_eps=1e-5,
-        norm_first=False,
+        encoder_norm='custom_batch',
+        norm_eps=1e-5,
         num_encoder_layers=3,
+        num_decoder_layers=3,
         num_hidden_decoder_layers=None,
         positional_encoding='sin',
+        clip_logit_c=None,
         **kwargs) -> None:
 
         super().__init__()
@@ -420,11 +494,11 @@ class TSPTransformer(nn.Module):
                 nhead,
                 dim_feedforward,
                 activation,
-                layer_norm_eps,
+                encoder_norm,
+                norm_eps,
                 add_cross_attn=False,
                 use_feedforward_block_sa=True,
-                dropout_p_sa=dropout_p,
-                dropout_p_ca=dropout_p,
+                dropout_p_sa=dropout_p
             )
             for _ in range(num_encoder_layers)
         ])
@@ -435,7 +509,8 @@ class TSPTransformer(nn.Module):
                 nhead,
                 dim_feedforward,
                 activation,
-                layer_norm_eps,
+                'layer',
+                norm_eps,
                 add_cross_attn=True,
                 use_q_proj_ca=True,
                 use_feedforward_block_sa=False,
@@ -451,13 +526,15 @@ class TSPTransformer(nn.Module):
                 1,
                 None,
                 activation,
-                layer_norm_eps,
+                'layer',
+                norm_eps,
                 add_cross_attn=True,
                 use_q_proj_ca=True,
                 use_feedforward_block_sa=False,
                 use_feedforward_block_ca=False,
                 dropout_p_sa=dropout_p,
-                dropout_p_ca=0.
+                dropout_p_ca=0.,
+                clip_logit_c_ca=clip_logit_c
             )
 
         self.start_node = nn.Parameter(torch.rand(d_model))
@@ -475,10 +552,11 @@ class TSPTransformer(nn.Module):
         use_cache = any(key_value_cache)
         for i, layer in enumerate(self.decoder):
             query, _, cached_key_value = layer(query, key_value, mask, cached_key_value=key_value_cache[i] if use_cache else None)
-            key_value_cache.append(cached_key_value)
+            if len(key_value_cache) < len(self.decoder):
+                key_value_cache.append(cached_key_value)
         last_cached_key_value = key_value_cache[-1] if use_cache else None
         attn_out, attn_weight, cached_key_value = self.head(query, key_value, mask, cached_key_value=last_cached_key_value)
-        if not use_cache:
+        if len(key_value_cache) < len(self.decoder) + 1:
             key_value_cache.append(cached_key_value)
         return attn_out, attn_weight, key_value_cache
 
@@ -511,7 +589,10 @@ class TSPTransformer(nn.Module):
                 tour[:, t + 1] = last_idxs
                 tour[:, -1] = tour[:, 0]
                 log_probs[:, t + 1] = attn_weight[zero2bsz, :, last_idxs].view(-1)
-        return tour, log_probs.sum(dim=-1)
+        return TourModelOutput(
+            tour=tour,
+            sum_probs=log_probs.log().sum(dim=-1)
+        )
 
 
 
