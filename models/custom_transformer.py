@@ -575,7 +575,7 @@ class TSPTransformer(nn.Module):
             clip_logit_c_ca=clip_logit_c
         )
 
-        self.start_node = nn.Parameter(torch.rand(d_model))
+        self.start_node = nn.Parameter(torch.randn(d_model))
         self.register_buffer('PE', self.pe(torch.zeros(1, 5000, d_model)))    
 
     

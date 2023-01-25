@@ -149,3 +149,4 @@ test.txt
 checkpoints/*
 *.pt
 runs
+logs/*
