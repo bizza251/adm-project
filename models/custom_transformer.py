@@ -493,7 +493,7 @@ class TSPDecoderLayer(nn.Module):
 
     def forward(self, query, key_value_partial_tour, key_value, mask=None, **kwargs):
         out, _, __ = self.partial_tour_ca_block(query, key_value_partial_tour)
-        out, attn_weight, cached_key_value = self.encoder_ca_block(out, key_value, **kwargs)
+        out, attn_weight, cached_key_value = self.encoder_ca_block(out, key_value, mask, **kwargs)
         return out, attn_weight, cached_key_value
 
 
