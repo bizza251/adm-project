@@ -443,7 +443,7 @@ class TSPCustomTransformer(nn.Module):
         sum_probs = torch.gather(attn_matrix, -1, tour[..., :-1].view(bsz, nodes, 1)).log().sum((1, 2))
         return TourModelOutput(
             tour=tour.cpu(),
-            sum_probs=sum_probs,
+            sum_log_probs=sum_probs,
             attn_matrix=attn_matrix)
         
 
@@ -633,7 +633,7 @@ class TSPTransformer(nn.Module):
                 log_probs[:, t + 1] = attn_weight[zero2bsz, :, last_idxs].view(-1)
         return TourModelOutput(
             tour=tour,
-            sum_probs=log_probs.log().sum(dim=-1)
+            sum_log_probs=log_probs.log().sum(dim=-1)
         )
 
 

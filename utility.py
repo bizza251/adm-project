@@ -184,6 +184,11 @@ def get_tour_len(tour: Tensor) -> Tensor:
 
 
 
+def get_tour_coords(coords, tour):
+    return coords[torch.arange(len(tour)).view(-1, 1), tour]
+
+
+
 def len_to_gt_len_ratio(model_output, batch):
     tours = model_output.tour
     tour_coords = batch.coords[torch.arange(len(tours)).view(-1, 1), tours]
