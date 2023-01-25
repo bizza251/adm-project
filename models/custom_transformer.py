@@ -513,7 +513,7 @@ class TSPTransformer(nn.Module):
             encoder_norm=args.norm,
             norm_eps=args.norm_eps,
             num_encoder_layers=args.num_encoder_layers,
-            num_decoder_layers=args.num_hidden_decoder_layers,
+            num_hidden_decoder_layers=args.num_hidden_decoder_layers,
             positional_encoding='sin',
             clip_logit_c=args.clip_logit_c)
 
@@ -528,14 +528,12 @@ class TSPTransformer(nn.Module):
         encoder_norm='custom_batch',
         norm_eps=1e-5,
         num_encoder_layers=3,
-        num_decoder_layers=3,
-        num_hidden_decoder_layers=None,
+        num_hidden_decoder_layers=1,
         positional_encoding='sin',
         clip_logit_c=None,
         **kwargs) -> None:
 
         super().__init__()
-        num_decoder_layers = num_hidden_decoder_layers if num_hidden_decoder_layers is not None else num_encoder_layers - 1
         self.pe = get_positional_encoding(positional_encoding, d_model)
         self.input_ff = nn.Linear(in_features=in_features, out_features=d_model)
         self.encoder = nn.ModuleList([
@@ -556,13 +554,14 @@ class TSPTransformer(nn.Module):
         self.decoder = nn.ModuleList([
             TSPDecoderLayer(
                 d_model,
-                nhead,dim_feedforward,
+                nhead,
+                dim_feedforward,
                 dropout_p,
                 activation,
                 'layer',
                 norm_eps
             )
-            for _ in range(num_decoder_layers)
+            for _ in range(num_hidden_decoder_layers)
         ])   
 
         self.head = TSPCustomEncoderBlock(
@@ -602,14 +601,17 @@ class TSPTransformer(nn.Module):
 
 
     def forward(self, x):
-        x = self.input_ff(x)
-        key_value = self.encode(x)
-        query = self.start_node.expand(len(x), 1, -1) + self.PE[:, 0]
         bsz, n_nodes, _ = x.shape
+        z = self.start_node.expand(bsz, 1, -1)
+        x = self.input_ff(x)
+        x = torch.concat([z, x], dim=1)
+        key_value = self.encode(x)
+        query = z + self.PE[:, 0]
         zero2bsz = torch.arange(bsz)
         tour = torch.empty((bsz, n_nodes + 1), dtype=torch.long)
         log_probs = torch.empty((bsz, n_nodes), device=x.device)
-        visited_node_mask = torch.zeros((bsz, 1, n_nodes), dtype=x.dtype, device=x.device)
+        visited_node_mask = torch.zeros((bsz, 1, n_nodes + 1), dtype=x.dtype, device=x.device)
+        visited_node_mask[..., 0] = -torch.inf
         key_value_cache = None
         for t in range(n_nodes - 1):
             if t > 0:
@@ -621,12 +623,12 @@ class TSPTransformer(nn.Module):
             else:
                 idxs = torch.argmax(attn_weight, dim=-1)
             idxs = idxs.view(-1)
-            tour[:, t] = idxs
+            tour[:, t] = idxs - 1
             log_probs[:, t] = attn_weight[zero2bsz, :, idxs].view(-1)
-            visited_node_mask[zero2bsz, :, idxs] += -torch.inf
+            visited_node_mask[zero2bsz, :, idxs] = -torch.inf
             if t == n_nodes - 2:
                 last_idxs = torch.nonzero(visited_node_mask == 0)[:, -1]
-                tour[:, t + 1] = last_idxs
+                tour[:, t + 1] = last_idxs - 1
                 tour[:, -1] = tour[:, 0]
                 log_probs[:, t + 1] = attn_weight[zero2bsz, :, last_idxs].view(-1)
         return TourModelOutput(

@@ -39,7 +39,7 @@ class TourLossReinforce(nn.Module):
         # coords[torch.arange(bsz), swap_idxs[:, 0]] = coords[torch.arange(bsz), swap_idxs[:, 1]]
         # coords[torch.arange(bsz), swap_idxs[:, 1]] = tmp
         # bsln_len = get_tour_len(coords)
-        # bsln_len = gt_len * (1 + torch.rand_like(gt_len))
+        # bsln_len = gt_len * (1 + torch.clamp_max(torch.rand_like(gt_len), 0.5))
         bsln_len = gt_len
         return torch.mean((tour_len - bsln_len) * sum_log_probs)
 
