@@ -363,10 +363,14 @@ def get_model(args):
 
 
 def get_optimizer(args, model):
+    if hasattr(model, 'model'):
+        params = model.model.parameters
+    else:
+        params = model.parameters
     if args.optimizer == 'adam':
-        return Adam(model.parameters(), lr=args.learning_rate)
+        return Adam(params(), lr=args.learning_rate)
     elif args.optimizer == 'sgd':
-        return SGD(model.parameters(), lr=args.learning_rate)
+        return SGD(params(), lr=args.learning_rate)
     else:
         raise NotImplementedError()
 
