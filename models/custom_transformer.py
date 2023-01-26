@@ -425,13 +425,13 @@ class TSPCustomTransformer(nn.Module):
 
     def forward(self, x, attn_mask=None):
         bsz, nodes = x.shape[:2]
-        attn_mask = None
+        # attn_mask = None
         _, attn_matrix = self.encode(x, attn_mask)
 
         attn_matrix = sinkhorn(attn_matrix, self.sinkhorn_tau, self.sinkhorn_i)
         tour = torch.empty((bsz, nodes), requires_grad=False)
         attn_matrix = attn_matrix - attn_mask
-        attn_matrix[:, :, 0] = -1e9
+
         # first_node_idxs = attn_mask.nonzero()[:, 0]
         # build tour using hard permutation matrix with hungarian algorithm
         for i in range(tour.shape[0]):
