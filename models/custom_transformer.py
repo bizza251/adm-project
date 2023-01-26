@@ -425,22 +425,21 @@ class TSPCustomTransformer(nn.Module):
 
     def forward(self, x, attn_mask=None):
         bsz, nodes = x.shape[:2]
+        attn_mask = None
         _, attn_matrix = self.encode(x, attn_mask)
-        # attn_matrix = torch.softmax(torch.tanh(attn_matrix) * 10, dim=-1)
+
         attn_matrix = sinkhorn(attn_matrix, self.sinkhorn_tau, self.sinkhorn_i)
         tour = torch.empty((bsz, nodes), requires_grad=False)
-        # if self.training or not self.use_lsa_eval:
-        if False:
-            # build tour using soft permutation matrix with sinkhorn algorithm
-            node_idx = torch.arange(nodes, device=x.device).expand(bsz, -1)
-            idx = torch.argmax(attn_matrix, dim=2)
-            tour = torch.gather(node_idx, 1, idx)
-        else:
-            # build tour using hard permutation matrix with hungarian algorithm
-            for i in range(tour.shape[0]):
-                tour[i] = torch.tensor(linear_sum_assignment(attn_matrix[i].detach().cpu().numpy(), maximize=True)[1])
+        attn_matrix = attn_matrix - attn_mask
+        attn_matrix[:, :, 0] = -1e9
+        # first_node_idxs = attn_mask.nonzero()[:, 0]
+        # build tour using hard permutation matrix with hungarian algorithm
+        for i in range(tour.shape[0]):
+            tour[i] = torch.tensor(linear_sum_assignment(attn_matrix[i].detach().cpu().numpy(), maximize=True)[1])
+        
         tour = torch.cat((tour, tour[:, 0:1]), dim=1).to(attn_matrix.device).to(torch.long)
         sum_probs = torch.gather(attn_matrix, -1, tour[..., :-1].view(bsz, nodes, 1)).log().sum((1, 2))
+        
         return TourModelOutput(
             tour=tour.cpu(),
             sum_log_probs=sum_probs,

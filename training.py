@@ -178,7 +178,7 @@ class Trainer:
         '''Subclass or change this method with MethodType to customize behavior.'''
         batch = self.process_batch(batch)
         model_input = self.build_model_input(batch)
-        model_output = self.model(model_input)
+        model_output = self.model(*model_input)
         loss_inputs, loss_targets = self.build_loss_forward_input(batch, model_output)
         # model output, gt
         l = self.loss(*loss_inputs, *loss_targets)
@@ -199,7 +199,7 @@ class Trainer:
 
     
     def build_model_input(self, batch):
-        return batch.coords
+        return (batch.coords, )
 
     
     def build_loss_inputs(self, batch, model_output):
@@ -220,7 +220,7 @@ class Trainer:
         '''Subclass or change this method with MethodType to customize behavior.'''
         batch = self.process_batch(batch)
         model_input = self.build_model_input(batch)
-        model_output = self.model(model_input)
+        model_output = self.model(*model_input)
         loss_inputs, loss_targets = self.build_loss_forward_input(batch, model_output)
         l = self.loss(*loss_inputs, *loss_targets)
         metrics_results = {}
@@ -327,17 +327,6 @@ class ReinforceTrainer(Trainer):
 
 
 
-class CustomReinforceTrainer(Trainer):
-    
-    def build_loss_inputs(self, batch, model_output):
-        return (model_output.sum_log_probs, get_tour_coords(batch.coords, model_output.tour), model_output.tour, batch.gt_tour)
-
-
-    def build_loss_targets(self, batch, model_output):
-        return (batch.gt_len.to(model_output.sum_log_probs.device), model_output.attn_matrix, batch.coords)
-
-
-
 class BaselineReinforceTrainer(ReinforceTrainer):
 
     def epoch_begin_hook(self):
@@ -349,6 +338,24 @@ class BaselineReinforceTrainer(ReinforceTrainer):
         return (get_tour_len(get_tour_coords(batch.coords, model_output.bsln.tour)),)
 
 
+
+class CustomReinforceTrainer(BaselineReinforceTrainer):
+    
+    # def build_loss_inputs(self, batch, model_output):
+    #     return (model_output.sum_log_probs, get_tour_coords(batch.coords, model_output.tour), model_output.tour, batch.gt_tour)
+
+
+    # def build_loss_targets(self, batch, model_output):
+    #     return (batch.gt_len.to(model_output.sum_log_probs.device), model_output.attn_matrix, batch.coords)
+
+    def build_model_input(self, batch):
+        bsz, nodes = batch.coords.shape[:-1]
+        attn_mask = torch.zeros((bsz, nodes, nodes), device=batch.coords.device)
+        attn_mask[torch.arange(bsz).view(-1, 1, 1), 0, batch.gt_tour[:, 0:1].unsqueeze(1) - 1] = -1e9
+        return (batch.coords, attn_mask)
+
+
+        
 
 def get_model(args):
     if args.model == 'custom':
@@ -458,8 +465,8 @@ def get_trainer(args):
             else:
                 trainer = ReinforceTrainer.from_args(args)
         elif args.model == 'custom':
-            # trainer = CustomReinforceTrainer.from_args(args)
-            trainer = ReinforceTrainer.from_args(args)
+            trainer = CustomReinforceTrainer.from_args(args)
+            # trainer = ReinforceTrainer.from_args(args)
     else:
         raise NotImplementedError()
     return trainer
