@@ -395,6 +395,7 @@ def get_train_dataloader(args):
         dataset = get_train_dataset(args)
         return torch.utils.data.DataLoader(
             dataset, 
+            shuffle=True,
             batch_size=args.train_batch_size,
             num_workers=args.dataloader_num_workers,
             collate_fn=custom_collate_fn)
@@ -405,6 +406,7 @@ def get_eval_dataloader(args):
         dataset = get_eval_dataset(args)
         return torch.utils.data.DataLoader(
             dataset, 
+            shuffle=True,
             batch_size=args.eval_batch_size,
             num_workers=args.dataloader_num_workers,
             collate_fn=custom_collate_fn)

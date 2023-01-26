@@ -51,7 +51,28 @@ def map_func(x):
     return BatchGraphInput(x.coords, torch.tensor(x.sub_opt), x.sub_opt_cost)
 
 
-class RandomGraphDataset(torch.utils.data.IterableDataset):
+class RandomGraphDataset(torch.utils.data.Dataset):
+
+    def __init__(
+        self,
+        path: str,
+        mapping_func: Callable[[Dict], BatchGraphInput] = None,
+    ):
+        super().__init__()
+        self.mapping_func = mapping_func if mapping_func is not None else map_func
+        self.filenames = [x.path for x in os.scandir(path) if x.is_file()]
+
+    
+    def __len__(self):
+        return len(self.filenames)
+
+
+    def __getitem__(self, idx):
+        return self.mapping_func(torch.load(self.filenames[idx]))
+
+
+
+class RandomGraphDatasetIt(torch.utils.data.IterableDataset):
 
     def __init__(
         self,
