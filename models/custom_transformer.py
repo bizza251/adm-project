@@ -374,8 +374,8 @@ class TSPCustomTransformer(nn.Module):
             1,
             dim_feedforward,
             activation,
-            norm_eps,
             norm,
+            norm_eps,
             True,
             use_q_proj_ca,
             use_feedforward_block_sa=True,
@@ -417,7 +417,6 @@ class TSPCustomTransformer(nn.Module):
     def encode(self, key_value, attn_mask=None):
         key_value = self.input_ff(key_value)
         query = self.pe(key_value)
-        query = self.pe_norm(query)
         query = query.expand(len(key_value), *query.shape[1:])
         memory, attn_weight = self.encoder(query, key_value, attn_mask)
         memory, attn_weight, _ = self.head(query, memory, attn_mask)

@@ -330,11 +330,11 @@ class ReinforceTrainer(Trainer):
 class CustomReinforceTrainer(Trainer):
     
     def build_loss_inputs(self, batch, model_output):
-        return (model_output.sum_probs, get_tour_coords(batch.coords, model_output.tour), model_output.tour, batch.gt_tour)
+        return (model_output.sum_log_probs, get_tour_coords(batch.coords, model_output.tour), model_output.tour, batch.gt_tour)
 
 
     def build_loss_targets(self, batch, model_output):
-        return (batch.gt_len.to(model_output.sum_probs.device), model_output.attn_matrix, batch.coords)
+        return (batch.gt_len.to(model_output.sum_log_probs.device), model_output.attn_matrix, batch.coords)
 
 
 
@@ -416,10 +416,10 @@ def get_loss(args):
     if args.loss == 'mse':
         loss = nn.MSELoss()
     elif args.loss == 'reinforce_loss':
-        if args.model == 'custom':
-            loss = ValidTourLossReinforce()
-        else:
-            loss = TourLossReinforce()
+        # if args.model == 'custom':
+        #     loss = ValidTourLossReinforce()
+        # else:
+        loss = TourLossReinforce()
     else:
         raise NotImplementedError()
     return loss.to(args.device)
@@ -458,7 +458,8 @@ def get_trainer(args):
             else:
                 trainer = ReinforceTrainer.from_args(args)
         elif args.model == 'custom':
-            trainer = CustomReinforceTrainer.from_args(args)
+            # trainer = CustomReinforceTrainer.from_args(args)
+            trainer = ReinforceTrainer.from_args(args)
     else:
         raise NotImplementedError()
     return trainer

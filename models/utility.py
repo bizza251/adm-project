@@ -59,7 +59,8 @@ class ValidTourLossReinforce(nn.Module):
         rewards = torch.empty((len(sum_log_probs), ), device=sum_log_probs.device)
         if torch.any(valid_tour_mask):
             tour_len = get_tour_len(coords[valid_tour_mask])
-            if torch.rand((1,)).item() < 0.9:
+            # if torch.rand((1,)).item() < 0.9:
+            if False:
                 # bsz = tour.shape[0]
                 # swap_idxs = torch.randint(1, expected_unique_nodes, (bsz, 2))
                 # tmp = coords[torch.arange(bsz), swap_idxs[:, 0]]
