@@ -606,7 +606,7 @@ class TSPTransformer(nn.Module):
         x = self.input_ff(x)
         x = torch.concat([z, x], dim=1)
         key_value = self.encode(x)
-        query = z + self.PE[:, 0]
+        query = key_value[:, 0:1] + self.PE[:, 0]
         zero2bsz = torch.arange(bsz)
         tour = torch.empty((bsz, n_nodes + 1), dtype=torch.long)
         log_probs = torch.empty((bsz, n_nodes), device=x.device)

@@ -178,11 +178,11 @@ class Trainer:
         '''Subclass or change this method with MethodType to customize behavior.'''
         batch = self.process_batch(batch)
         model_input = self.build_model_input(batch)
-        self.optimizer.zero_grad()
         model_output = self.model(model_input)
         loss_inputs, loss_targets = self.build_loss_forward_input(batch, model_output)
         # model output, gt
         l = self.loss(*loss_inputs, *loss_targets)
+        self.optimizer.zero_grad()
         l.backward()
         self.optimizer.step()
         if self.scheduler is not None:

@@ -96,39 +96,6 @@ print(args)
 
 # %%
 ###################
-# Small test set for quick algorithm comparison
-# Note : this can be removed
-###################
-
-save_1000tsp = True
-save_1000tsp = False
-if save_1000tsp:
-    bsz = 1000
-    x = torch.rand(bsz, args.nb_nodes, args.dim_input_nodes, device='cpu') 
-    print(x.size(),x[0])
-    data_dir = os.path.join("data")
-    if not os.path.exists(data_dir):
-        os.makedirs(data_dir)
-    if args.nb_nodes==20 : torch.save({ 'x': x, }, '{}.pkl'.format(data_dir + "/1000tsp20"))
-    if args.nb_nodes==50 : torch.save({ 'x': x, }, '{}.pkl'.format(data_dir + "/1000tsp50"))
-    if args.nb_nodes==100 : torch.save({ 'x': x, }, '{}.pkl'.format(data_dir + "/1000tsp100"))
-
-checkpoint = None
-if args.nb_nodes==20 : checkpoint = torch.load("data/1000tsp20.pkl")
-if args.nb_nodes==50 : checkpoint = torch.load("data/1000tsp50.pkl")
-if args.nb_nodes==100 : checkpoint = torch.load("data/1000tsp100.pkl")
-if checkpoint is not None:
-    x_1000tsp = checkpoint['x'].to(device)
-    n = x_1000tsp.size(1)
-    print('nb of nodes :',n)
-else:
-    x_1000tsp = torch.rand(1000, args.nb_nodes, args.dim_input_nodes, device='cpu')
-    n = x_1000tsp.size(1)
-    print('nb of nodes :',n)
-
-
-# %%
-###################
 # Network definition
 # Notation : 
 #            bsz : batch size
@@ -568,18 +535,18 @@ from dataset import RandomGraphDataset
 from utility import custom_collate_fn
 
 args.bsz = 64
-dataset_train = RandomGraphDataset('/dataset/ALL_tsp/generated_train')
+dataset_train = RandomGraphDataset('/dataset/ALL_tsp/generated_debug_2')
 train_dataloader = torch.utils.data.DataLoader(
             dataset_train, 
             batch_size=args.bsz,
-            num_workers=2,
+            num_workers=0,
             collate_fn=custom_collate_fn)
 
-dataset_eval = RandomGraphDataset('/dataset/ALL_tsp/generated_eval')
+dataset_eval = RandomGraphDataset('/dataset/ALL_tsp/generated_debug_2')
 eval_dataloader = torch.utils.data.DataLoader(
             dataset_eval, 
             batch_size=args.bsz,
-            num_workers=2,
+            num_workers=0,
             collate_fn=custom_collate_fn)
 
 
