@@ -33,10 +33,10 @@ def custom_multi_head_attn(
     assert embd_dim % nhead == 0, "Embedding dimension must be divisible for the number of heads"
     head_dim = embd_dim // nhead
     k, v = key, value
-    
-    q = query.contiguous().view(tgt_len, bsz * nhead, head_dim).transpose(0, 1)
-    k = k.contiguous().view(key_value_len, bsz * nhead, head_dim).transpose(0, 1)
-    v = v.contiguous().view(key_value_len, bsz * nhead, head_dim).transpose(0, 1)
+
+    q = query.transpose(0, 1).contiguous().view(tgt_len, bsz * nhead, head_dim).transpose(0, 1)
+    k = k.transpose(0, 1).contiguous().view(key_value_len, bsz * nhead, head_dim).transpose(0, 1)
+    v = v.transpose(0, 1).contiguous().view(key_value_len, bsz * nhead, head_dim).transpose(0, 1)
 
     attn = torch.bmm(q, k.transpose(-2, -1))
     attn /= sqrt(head_dim)
@@ -51,8 +51,9 @@ def custom_multi_head_attn(
     if dropout_p > 0.0:
         attn = dropout(attn, p=dropout_p)
     out = torch.bmm(attn, v)
-    # attn_output = attn_output.transpose(0, 1).contiguous().view(tgt_len, bsz, embed_dim)
-    out = out.transpose(0, 1).contiguous().view(bsz, tgt_len, embd_dim)
+
+    out = out.transpose(0, 1).contiguous().view(tgt_len, bsz, embd_dim).transpose(0, 1)
+
     # if nhead > 1 and out_proj_weight is not None:
     #     out = linear(out, out_proj_weight, out_proj_bias)
     return out, attn
