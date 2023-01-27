@@ -292,7 +292,9 @@ class TSPCustomEncoder(nn.Module):
         norm='layer', 
         norm_eps=1e-5, 
         add_cross_attn=True, 
-        use_q_proj_ca=False
+        use_q_proj_ca=False,
+        use_feedforward_block_sa=True,
+        use_feedforward_block_ca=True,        
     ) -> None:
 
         super().__init__()
@@ -307,8 +309,8 @@ class TSPCustomEncoder(nn.Module):
                 norm_eps, 
                 add_cross_attn,
                 use_q_proj_ca,
-                use_feedforward_block_sa=True,
-                use_feedforward_block_ca=True,
+                use_feedforward_block_sa=use_feedforward_block_sa,
+                use_feedforward_block_ca=use_feedforward_block_ca,
                 use_q_residual_sa=False,
                 use_q_residual_ca=False,
                 dropout_p_sa=dropout_p,
@@ -323,6 +325,7 @@ class TSPCustomEncoder(nn.Module):
             output, attn_weight, _ = mod(query, output, attn_mask)
         
         return output, attn_weight
+
 
 
 class TSPCustomTransformer(nn.Module):
@@ -350,9 +353,12 @@ class TSPCustomTransformer(nn.Module):
         add_cross_attn=True,
         use_q_proj_ca=False,
         positional_encoding='sin',
+        use_feedforward_block_sa=False,
+        use_feedforward_block_ca=True,
         **kwargs) -> None:
 
         super().__init__()
+        assert use_feedforward_block_sa or use_feedforward_block_ca, "You're running a model without non-linearities."
         self.pe = get_positional_encoding(positional_encoding, d_model)
         self.input_ff = nn.Linear(in_features=in_features, out_features=d_model)
         self.input_norm = get_norm_layer(norm, d_model, norm_eps)
@@ -367,7 +373,9 @@ class TSPCustomTransformer(nn.Module):
             norm,
             norm_eps, 
             add_cross_attn,
-            use_q_proj_ca)
+            use_q_proj_ca,
+            use_feedforward_block_sa=use_feedforward_block_sa,
+            use_feedforward_block_ca=use_feedforward_block_ca)
         
         self.head = TSPCustomEncoderLayer(
             d_model,
@@ -378,7 +386,7 @@ class TSPCustomTransformer(nn.Module):
             norm_eps,
             True,
             use_q_proj_ca,
-            use_feedforward_block_sa=True,
+            use_feedforward_block_sa=use_feedforward_block_sa,
             use_feedforward_block_ca=False,
             use_q_residual_sa=False,
             use_q_residual_ca=False,
@@ -411,7 +419,9 @@ class TSPCustomTransformer(nn.Module):
             sinkhorn_i=args.sinkhorn_i,
             add_cross_attn=args.add_cross_attn,
             use_q_proj_ca=args.use_q_proj_ca,
-            positional_encoding=args.positional_encoding)
+            positional_encoding=args.positional_encoding,
+            use_feedforward_block_sa=args.use_feedforward_block_sa,
+            use_feedforward_block_ca=args.use_feedforward_block_ca)
 
 
     def encode(self, key_value, attn_mask=None):
