@@ -28,10 +28,12 @@ class RLAgentWithBaseline(nn.Module):
     
     def train(self, mode: bool = True):
         self.model.train(mode)
+        self.training = mode
 
 
     def eval(self):
         self.model.eval()
+        self.training = False
 
     
     def state_dict(self, destination=None, prefix='', keep_vars=False):

@@ -335,11 +335,15 @@ class BaselineReinforceTrainer(ReinforceTrainer):
 
     
     def build_loss_targets(self, batch, model_output):
-        return (get_tour_len(get_tour_coords(batch.coords, model_output.bsln.tour)),)
+        if self.model.training:
+            return (get_tour_len(get_tour_coords(batch.coords, model_output.bsln.tour)),)
+        else:
+            return (batch.gt_len.to(model_output.sum_log_probs.device),)
 
 
 
-class CustomReinforceTrainer(BaselineReinforceTrainer):
+
+class CustomReinforceTrainer(ReinforceTrainer):
     
     # def build_loss_inputs(self, batch, model_output):
     #     return (model_output.sum_log_probs, get_tour_coords(batch.coords, model_output.tour), model_output.tour, batch.gt_tour)
@@ -355,7 +359,12 @@ class CustomReinforceTrainer(BaselineReinforceTrainer):
         return (batch.coords, attn_mask)
 
 
-        
+
+class CustomBaselineReinforceTrainer(CustomReinforceTrainer, BaselineReinforceTrainer):
+    ...
+
+
+
 
 def get_model(args):
     if args.model == 'custom':
@@ -465,8 +474,10 @@ def get_trainer(args):
             else:
                 trainer = ReinforceTrainer.from_args(args)
         elif args.model == 'custom':
-            trainer = CustomReinforceTrainer.from_args(args)
-            # trainer = ReinforceTrainer.from_args(args)
+            if args.reinforce_baseline == 'baseline':
+                trainer = CustomBaselineReinforceTrainer.from_args(args)
+            else:
+                trainer = CustomReinforceTrainer.from_args(args)
     else:
         raise NotImplementedError()
     return trainer
