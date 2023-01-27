@@ -1,0 +1,131 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Reinforce - baseline",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--model",
+                "baseline",
+                "--train_mode",
+                "reinforce",
+                "--reinforce_baseline",
+                "baseline",                 // "gt" per usare la lunghezza di riferimento dal dataset
+                "--loss",
+                "reinforce_loss",
+                "--do_train",
+                "--train_dataset",
+                "/dataset/ALL_tsp/generated_10_debug",
+                "--do_eval",
+                "--eval_dataset",
+                "/dataset/ALL_tsp/generated_eval",
+                "--dataloader_num_workers",
+                "2",
+                "--train_batch_size",
+                "96",
+                "--eval_batch_size",
+                "32",
+                "--checkpoint_dir",
+                "checkpoints",
+                "--save_epochs",
+                "10000000000000000",
+                "--epochs",
+                "1000000000000000",
+                "--learning_rate",
+                "1e-4",
+                "--device",
+                "cuda:0",
+                "--metrics",
+                "len_to_gt_len_ratio",
+                "avg_tour_len",
+                "--tb_comment",
+                "_bsln_debug",
+                "--clip_logit_c",
+                "10",
+                "--num_encoder_layers",
+                "3",
+                "--num_hidden_decoder_layers",
+                "1",
+                "--norm",
+                "custom_batch",
+                "--d_model",
+                "128",
+                "--dim_feedforward",
+                "512",
+                "--nhead",
+                "8"
+            ],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },   
+        },
+        {
+            "name": "Reinforce - custom",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--model",
+                "custom",
+                "--positional_encoding",
+                "sin",                          // da ottimizzare?
+                "--train_mode",
+                "reinforce",
+                "--loss",
+                "reinforce_loss",
+                "--do_train",
+                "--reinforce_baseline",
+                "baseline",                 // "gt" per usare la lunghezza di riferimento dal dataset
+                "--train_dataset",
+                "generated_custom",
+                "--do_eval",
+                "--eval_dataset",
+                "generated_custom",
+                "--train_batch_size",
+                "16",                       // da ottimizzare?
+                "--eval_batch_size",
+                "16",
+                "--checkpoint_dir",
+                "checkpoints",
+                "--save_epochs",
+                "10000000000000",
+                "--learning_rate",
+                "1e-4",                     // da ottimizzare?
+                "--num_hidden_encoder_layers",
+                "2",                        // da ottimizzare?
+                "--d_model",
+                "128",                      // da ottimizzare?
+                "--dim_feedforward",
+                "512",                      // da ottimizzare?
+                "--norm",
+                "custom_batch",
+                "--metrics",
+                "len_to_gt_len_ratio",
+                "avg_tour_len",
+                "--tb_comment",
+                "_custom_rl_debug",
+                "--epochs",
+                "100000000000000",
+                // almeno uno tra i due seguenti deve esserci       // da ottimizzare?
+                // "--use_feedforward_block_sa",
+                "--use_feedforward_block_ca",
+                "--clip_logit_c",
+                "10",
+                "--device",
+                "cuda:0",
+            ],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },   
+        }
+    ]
+}
