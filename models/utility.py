@@ -2,7 +2,7 @@ from typing import Iterable
 import torch
 from torch import nn
 from torch.functional import Tensor
-from utility import get_tour_len
+from utility import get_tour_coords, get_tour_len
 from dataclasses import dataclass
 
 
@@ -10,7 +10,7 @@ from dataclasses import dataclass
 @dataclass
 class TourModelOutput:
     tour: Tensor
-    sum_probs: Tensor
+    sum_log_probs: Tensor
     attn_matrix: Tensor = None
         
 
@@ -27,21 +27,13 @@ class TourLossReinforce(nn.Module):
     
     def forward(
         self,
-        sum_log_probs: Tensor,
         coords: Tensor,
-        gt_len: Tensor
+        sum_log_probs: Tensor,
+        tour: Tensor,
+        tgt_len: Tensor
     ) -> Tensor:
-        tour_len = get_tour_len(coords)
-        # coords = coords[:, torch.randperm(coords.shape[1], device=coords.device)]
-        # bsz = coords.shape[0]
-        # swap_idxs = torch.randint(1, coords.shape[1] - 1, (bsz, 2))
-        # tmp = coords[torch.arange(bsz), swap_idxs[:, 0]]
-        # coords[torch.arange(bsz), swap_idxs[:, 0]] = coords[torch.arange(bsz), swap_idxs[:, 1]]
-        # coords[torch.arange(bsz), swap_idxs[:, 1]] = tmp
-        # bsln_len = get_tour_len(coords)
-        # bsln_len = gt_len * (1 + torch.clamp_max(torch.rand_like(gt_len), 0.5))
-        bsln_len = gt_len
-        return torch.mean((tour_len - bsln_len) * sum_log_probs)
+        tour_len = get_tour_len(get_tour_coords(coords, tour))
+        return torch.mean((tour_len - tgt_len) * sum_log_probs)
 
 
 
@@ -67,7 +59,8 @@ class ValidTourLossReinforce(nn.Module):
         rewards = torch.empty((len(sum_log_probs), ), device=sum_log_probs.device)
         if torch.any(valid_tour_mask):
             tour_len = get_tour_len(coords[valid_tour_mask])
-            if torch.rand((1,)).item() < 0.9:
+            # if torch.rand((1,)).item() < 0.9:
+            if False:
                 # bsz = tour.shape[0]
                 # swap_idxs = torch.randint(1, expected_unique_nodes, (bsz, 2))
                 # tmp = coords[torch.arange(bsz), swap_idxs[:, 0]]

@@ -33,10 +33,10 @@ def custom_multi_head_attn(
     assert embd_dim % nhead == 0, "Embedding dimension must be divisible for the number of heads"
     head_dim = embd_dim // nhead
     k, v = key, value
-    
-    q = query.contiguous().view(tgt_len, bsz * nhead, head_dim).transpose(0, 1)
-    k = k.contiguous().view(key_value_len, bsz * nhead, head_dim).transpose(0, 1)
-    v = v.contiguous().view(key_value_len, bsz * nhead, head_dim).transpose(0, 1)
+
+    q = query.transpose(0, 1).contiguous().view(tgt_len, bsz * nhead, head_dim).transpose(0, 1)
+    k = k.transpose(0, 1).contiguous().view(key_value_len, bsz * nhead, head_dim).transpose(0, 1)
+    v = v.transpose(0, 1).contiguous().view(key_value_len, bsz * nhead, head_dim).transpose(0, 1)
 
     attn = torch.bmm(q, k.transpose(-2, -1))
     attn /= sqrt(head_dim)
@@ -51,8 +51,9 @@ def custom_multi_head_attn(
     if dropout_p > 0.0:
         attn = dropout(attn, p=dropout_p)
     out = torch.bmm(attn, v)
-    # attn_output = attn_output.transpose(0, 1).contiguous().view(tgt_len, bsz, embed_dim)
-    out = out.transpose(0, 1).contiguous().view(bsz, tgt_len, embd_dim)
+
+    out = out.transpose(0, 1).contiguous().view(tgt_len, bsz, embd_dim).transpose(0, 1)
+
     # if nhead > 1 and out_proj_weight is not None:
     #     out = linear(out, out_proj_weight, out_proj_bias)
     return out, attn
@@ -291,7 +292,9 @@ class TSPCustomEncoder(nn.Module):
         norm='layer', 
         norm_eps=1e-5, 
         add_cross_attn=True, 
-        use_q_proj_ca=False
+        use_q_proj_ca=False,
+        use_feedforward_block_sa=True,
+        use_feedforward_block_ca=True,        
     ) -> None:
 
         super().__init__()
@@ -306,8 +309,8 @@ class TSPCustomEncoder(nn.Module):
                 norm_eps, 
                 add_cross_attn,
                 use_q_proj_ca,
-                use_feedforward_block_sa=True,
-                use_feedforward_block_ca=True,
+                use_feedforward_block_sa=use_feedforward_block_sa,
+                use_feedforward_block_ca=use_feedforward_block_ca,
                 use_q_residual_sa=False,
                 use_q_residual_ca=False,
                 dropout_p_sa=dropout_p,
@@ -322,6 +325,7 @@ class TSPCustomEncoder(nn.Module):
             output, attn_weight, _ = mod(query, output, attn_mask)
         
         return output, attn_weight
+
 
 
 class TSPCustomTransformer(nn.Module):
@@ -349,9 +353,13 @@ class TSPCustomTransformer(nn.Module):
         add_cross_attn=True,
         use_q_proj_ca=False,
         positional_encoding='sin',
+        use_feedforward_block_sa=False,
+        use_feedforward_block_ca=True,
+        clip_logit_c_ca=None,
         **kwargs) -> None:
 
         super().__init__()
+        assert use_feedforward_block_sa or use_feedforward_block_ca, "You're running a model without non-linearities."
         self.pe = get_positional_encoding(positional_encoding, d_model)
         self.input_ff = nn.Linear(in_features=in_features, out_features=d_model)
         self.input_norm = get_norm_layer(norm, d_model, norm_eps)
@@ -366,23 +374,26 @@ class TSPCustomTransformer(nn.Module):
             norm,
             norm_eps, 
             add_cross_attn,
-            use_q_proj_ca)
+            use_q_proj_ca,
+            use_feedforward_block_sa=use_feedforward_block_sa,
+            use_feedforward_block_ca=use_feedforward_block_ca)
         
         self.head = TSPCustomEncoderLayer(
             d_model,
             1,
             dim_feedforward,
             activation,
-            norm_eps,
             norm,
+            norm_eps,
             True,
             use_q_proj_ca,
-            use_feedforward_block_sa=True,
+            use_feedforward_block_sa=use_feedforward_block_sa,
             use_feedforward_block_ca=False,
             use_q_residual_sa=False,
             use_q_residual_ca=False,
             dropout_p_sa=dropout_p,
-            dropout_p_ca=0.)
+            dropout_p_ca=0.,
+            clip_logit_c_ca=clip_logit_c_ca)
 
         self.d_model = d_model
         assert d_model % nhead == 0, "d_model must be divisible by nhead"
@@ -410,13 +421,15 @@ class TSPCustomTransformer(nn.Module):
             sinkhorn_i=args.sinkhorn_i,
             add_cross_attn=args.add_cross_attn,
             use_q_proj_ca=args.use_q_proj_ca,
-            positional_encoding=args.positional_encoding)
+            positional_encoding=args.positional_encoding,
+            use_feedforward_block_sa=args.use_feedforward_block_sa,
+            use_feedforward_block_ca=args.use_feedforward_block_ca,
+            clip_logit_c_ca=args.clip_logit_c)
 
 
     def encode(self, key_value, attn_mask=None):
         key_value = self.input_ff(key_value)
         query = self.pe(key_value)
-        query = self.pe_norm(query)
         query = query.expand(len(key_value), *query.shape[1:])
         memory, attn_weight = self.encoder(query, key_value, attn_mask)
         memory, attn_weight, _ = self.head(query, memory, attn_mask)
@@ -425,25 +438,24 @@ class TSPCustomTransformer(nn.Module):
 
     def forward(self, x, attn_mask=None):
         bsz, nodes = x.shape[:2]
+        # attn_mask = None
         _, attn_matrix = self.encode(x, attn_mask)
-        # attn_matrix = torch.softmax(torch.tanh(attn_matrix) * 10, dim=-1)
+
         attn_matrix = sinkhorn(attn_matrix, self.sinkhorn_tau, self.sinkhorn_i)
         tour = torch.empty((bsz, nodes), requires_grad=False)
-        # if self.training or not self.use_lsa_eval:
-        if False:
-            # build tour using soft permutation matrix with sinkhorn algorithm
-            node_idx = torch.arange(nodes, device=x.device).expand(bsz, -1)
-            idx = torch.argmax(attn_matrix, dim=2)
-            tour = torch.gather(node_idx, 1, idx)
-        else:
-            # build tour using hard permutation matrix with hungarian algorithm
-            for i in range(tour.shape[0]):
-                tour[i] = torch.tensor(linear_sum_assignment(attn_matrix[i].detach().cpu().numpy(), maximize=True)[1])
+        attn_matrix = attn_matrix - attn_mask
+
+        # first_node_idxs = attn_mask.nonzero()[:, 0]
+        # build tour using hard permutation matrix with hungarian algorithm
+        for i in range(tour.shape[0]):
+            tour[i] = torch.tensor(linear_sum_assignment(attn_matrix[i].detach().cpu().numpy(), maximize=True)[1])
+        
         tour = torch.cat((tour, tour[:, 0:1]), dim=1).to(attn_matrix.device).to(torch.long)
         sum_probs = torch.gather(attn_matrix, -1, tour[..., :-1].view(bsz, nodes, 1)).log().sum((1, 2))
+        
         return TourModelOutput(
             tour=tour.cpu(),
-            sum_probs=sum_probs,
+            sum_log_probs=sum_probs,
             attn_matrix=attn_matrix)
         
 
@@ -575,7 +587,7 @@ class TSPTransformer(nn.Module):
             clip_logit_c_ca=clip_logit_c
         )
 
-        self.start_node = nn.Parameter(torch.rand(d_model))
+        self.start_node = nn.Parameter(torch.randn(d_model))
         self.register_buffer('PE', self.pe(torch.zeros(1, 5000, d_model)))    
 
     
@@ -606,7 +618,7 @@ class TSPTransformer(nn.Module):
         x = self.input_ff(x)
         x = torch.concat([z, x], dim=1)
         key_value = self.encode(x)
-        query = z + self.PE[:, 0]
+        query = key_value[:, 0:1] + self.PE[:, 0]
         zero2bsz = torch.arange(bsz)
         tour = torch.empty((bsz, n_nodes + 1), dtype=torch.long)
         log_probs = torch.empty((bsz, n_nodes), device=x.device)
@@ -633,7 +645,7 @@ class TSPTransformer(nn.Module):
                 log_probs[:, t + 1] = attn_weight[zero2bsz, :, last_idxs].view(-1)
         return TourModelOutput(
             tour=tour,
-            sum_probs=log_probs.log().sum(dim=-1)
+            sum_log_probs=log_probs.log().sum(dim=-1)
         )
 
 

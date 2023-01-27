@@ -11,7 +11,8 @@ from torch.optim.lr_scheduler import LambdaLR
 import os
 
 from torch.utils.tensorboard import SummaryWriter
-from utility import BatchGraphInput, avg_tour_len, custom_collate_fn, len_to_gt_len_ratio, valid_tour_ratio
+from models.wrapped_models import RLAgentWithBaseline
+from utility import BatchGraphInput, avg_tour_len, custom_collate_fn, get_tour_coords, get_tour_len, len_to_gt_len_ratio, valid_tour_ratio
 from models.utility import TourLossReinforce, ValidTourLossReinforce
 from utility import BatchGraphInput, custom_collate_fn
 
@@ -176,11 +177,11 @@ class Trainer:
         '''Subclass or change this method with MethodType to customize behavior.'''
         batch = self.process_batch(batch)
         model_input = self.build_model_input(batch)
-        self.optimizer.zero_grad()
-        model_output = self.model(model_input)
-        loss_inputs, loss_targets = self.build_loss_input(batch, model_output)
+        model_output = self.model(*model_input)
+        loss_inputs, loss_targets = self.build_loss_forward_input(batch, model_output)
         # model output, gt
         l = self.loss(*loss_inputs, *loss_targets)
+        self.optimizer.zero_grad()
         l.backward()
         self.optimizer.step()
         if self.scheduler is not None:
@@ -197,12 +198,20 @@ class Trainer:
 
     
     def build_model_input(self, batch):
-        return batch.coords
+        return (batch.coords, )
 
     
-    def build_loss_input(self, batch, model_output):
-        inputs = (model_output[1],)
-        targets = (gt_matrix_from_tour(batch.gt_tour[..., :-1] - 1).to(self.device),)
+    def build_loss_inputs(self, batch, model_output):
+        return (model_output[1],)
+
+    
+    def build_loss_targets(self, batch, model_output):
+        return (gt_matrix_from_tour(batch.gt_tour[..., :-1] - 1).to(self.device),)
+
+
+    def build_loss_forward_input(self, batch, model_output):
+        inputs = self.build_loss_inputs(batch, model_output)
+        targets = self.build_loss_targets(batch, model_output)
         return inputs, targets
 
     
@@ -210,8 +219,8 @@ class Trainer:
         '''Subclass or change this method with MethodType to customize behavior.'''
         batch = self.process_batch(batch)
         model_input = self.build_model_input(batch)
-        model_output = self.model(model_input)
-        loss_inputs, loss_targets = self.build_loss_input(batch, model_output)
+        model_output = self.model(*model_input)
+        loss_inputs, loss_targets = self.build_loss_forward_input(batch, model_output)
         l = self.loss(*loss_inputs, *loss_targets)
         metrics_results = {}
         if self.metrics:
@@ -251,6 +260,10 @@ class Trainer:
         return eval_loss, metrics_results
 
 
+    def epoch_begin_hook(self):
+        self.model.train()
+
+
     def do_train(self):
         writer = SummaryWriter(comment=self.tb_comment)
         
@@ -259,7 +272,7 @@ class Trainer:
         countdown_patience = patience
         
         for epoch in range(self.start_epoch, self.epochs):
-            self.model.train()
+            self.epoch_begin_hook()
             
             prev_best_loss = 10e5
             epoch_loss = 0
@@ -318,23 +331,51 @@ class Trainer:
 
 class ReinforceTrainer(Trainer):
 
-    def build_loss_input(self, batch, model_output):
-        tours, sum_log_probs = model_output.tour, model_output.sum_probs
-        inputs = (sum_log_probs,)
-        coords, gt_len = batch.coords, batch.gt_len
-        targets = (coords[torch.arange(len(tours)).view(-1, 1), tours], gt_len.to(sum_log_probs.device))
-        return inputs, targets
+    def build_loss_inputs(self, batch, model_output):
+        return (batch.coords, model_output.sum_log_probs, model_output.tour)
+
+    
+    def build_loss_targets(self, batch, model_output):
+        return (batch.gt_len.to(model_output.sum_log_probs.device),)
 
 
 
-class CustomReinforceTrainer(Trainer):
+class BaselineReinforceTrainer(ReinforceTrainer):
 
-    def build_loss_input(self, batch, model_output):
-        tours, sum_probs, attn_matrix = model_output.tour, model_output.sum_probs, model_output.attn_matrix
-        coords, gt_len = batch.coords, batch.gt_len
-        inputs = (sum_probs, coords[torch.arange(len(tours)).view(-1, 1), tours], tours, batch.gt_tour)
-        targets = (gt_len.to(sum_probs.device), attn_matrix, batch.coords)
-        return inputs, targets
+    def epoch_begin_hook(self):
+        self.model.update_bsln()
+        self.model.train()
+
+    
+    def build_loss_targets(self, batch, model_output):
+        if self.model.training:
+            return (get_tour_len(get_tour_coords(batch.coords, model_output.bsln.tour)),)
+        else:
+            return (batch.gt_len.to(model_output.sum_log_probs.device),)
+
+
+
+
+class CustomReinforceTrainer(ReinforceTrainer):
+    
+    # def build_loss_inputs(self, batch, model_output):
+    #     return (model_output.sum_log_probs, get_tour_coords(batch.coords, model_output.tour), model_output.tour, batch.gt_tour)
+
+
+    # def build_loss_targets(self, batch, model_output):
+    #     return (batch.gt_len.to(model_output.sum_log_probs.device), model_output.attn_matrix, batch.coords)
+
+    def build_model_input(self, batch):
+        bsz, nodes = batch.coords.shape[:-1]
+        attn_mask = torch.zeros((bsz, nodes, nodes), device=batch.coords.device)
+        attn_mask[torch.arange(bsz).view(-1, 1, 1), 0, batch.gt_tour[:, 0:1].unsqueeze(1) - 1] = -1e9
+        return (batch.coords, attn_mask)
+
+
+
+class CustomBaselineReinforceTrainer(CustomReinforceTrainer, BaselineReinforceTrainer):
+    ...
+
 
 
 
@@ -345,14 +386,20 @@ def get_model(args):
         model = TSPTransformer.from_args(args)
     else:
         raise NotImplementedError()
+    if args.train_mode == 'reinforce' and args.reinforce_baseline == 'baseline':
+        model = RLAgentWithBaseline(model)
     return model.to(args.device)
 
 
 def get_optimizer(args, model):
+    if hasattr(model, 'model'):
+        params = model.model.parameters
+    else:
+        params = model.parameters
     if args.optimizer == 'adam':
-        return Adam(model.parameters(), lr=args.learning_rate)
+        return Adam(params(), lr=args.learning_rate)
     elif args.optimizer == 'sgd':
-        return SGD(model.parameters(), lr=args.learning_rate)
+        return SGD(params(), lr=args.learning_rate)
     else:
         raise NotImplementedError()
 
@@ -377,6 +424,7 @@ def get_train_dataloader(args):
         dataset = get_train_dataset(args)
         return torch.utils.data.DataLoader(
             dataset, 
+            shuffle=True,
             batch_size=args.train_batch_size,
             num_workers=args.dataloader_num_workers,
             collate_fn=custom_collate_fn)
@@ -387,6 +435,7 @@ def get_eval_dataloader(args):
         dataset = get_eval_dataset(args)
         return torch.utils.data.DataLoader(
             dataset, 
+            shuffle=True,
             batch_size=args.eval_batch_size,
             num_workers=args.dataloader_num_workers,
             collate_fn=custom_collate_fn)
@@ -396,10 +445,10 @@ def get_loss(args):
     if args.loss == 'mse':
         loss = nn.MSELoss()
     elif args.loss == 'reinforce_loss':
-        if args.model == 'custom':
-            loss = ValidTourLossReinforce()
-        else:
-            loss = TourLossReinforce()
+        # if args.model == 'custom':
+        #     loss = ValidTourLossReinforce()
+        # else:
+        loss = TourLossReinforce()
     else:
         raise NotImplementedError()
     return loss.to(args.device)
@@ -433,9 +482,15 @@ def get_trainer(args):
             trainer = Trainer.from_args(args)
     elif args.train_mode == 'reinforce':
         if args.model == 'baseline':
-            trainer = ReinforceTrainer.from_args(args)
+            if args.reinforce_baseline == 'baseline':
+                trainer = BaselineReinforceTrainer.from_args(args)
+            else:
+                trainer = ReinforceTrainer.from_args(args)
         elif args.model == 'custom':
-            trainer = CustomReinforceTrainer.from_args(args)
+            if args.reinforce_baseline == 'baseline':
+                trainer = CustomBaselineReinforceTrainer.from_args(args)
+            else:
+                trainer = CustomReinforceTrainer.from_args(args)
     else:
         raise NotImplementedError()
     return trainer

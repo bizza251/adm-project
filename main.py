@@ -32,6 +32,7 @@ def objective(trial):
     parser.add_argument('--dataloader_num_workers', type=int, default=0)
     parser.add_argument('--metrics', nargs='*', type=str, default=None)
     parser.add_argument('--tb_comment', type=str, default='')
+    parser.add_argument('--reinforce_baseline', type=str, choices=['gt', 'baseline'], default='gt')
     
     # model args
     parser.add_argument('--model', type=str, choices=['custom', 'baseline'], default='custom')
@@ -39,7 +40,7 @@ def objective(trial):
     parser.add_argument('--d_model', type=int, default=128)
     parser.add_argument('--nhead', type=int, default=4)
     parser.add_argument('--dim_feedforward', type=int, default=512)
-    parser.add_argument('--dropout_p', type=float, default=0.1)
+    parser.add_argument('--dropout_p', type=float, default=0.)
     parser.add_argument('--activation', type=str, choices=['relu'], default='relu')
     parser.add_argument('--norm', type=str, default='layer')
     parser.add_argument('--norm_eps', type=float, default=1e-5)
@@ -49,6 +50,8 @@ def objective(trial):
     parser.add_argument('--sinkhorn_i', type=int, default=20)
     parser.add_argument('--add_cross_attn', type=bool, default=True)
     parser.add_argument('--use_q_proj_ca', type=bool, default=False)
+    parser.add_argument('--use_feedforward_block_sa', action='store_true')
+    parser.add_argument('--use_feedforward_block_ca', action='store_true')
     parser.add_argument('--positional_encoding', type=str, choices=['sin', 'custom_sin', 'custom'], default='custom_sin')
     #parser.add_argument('--patience', type=int, default=10)
     #parser.add_argument('--ratio_loss_gain', type=float, default=1.005)
