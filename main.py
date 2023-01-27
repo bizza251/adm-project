@@ -41,7 +41,8 @@ def objective(trial):
     parser.add_argument('--dim_feedforward', type=int, default=512)
     parser.add_argument('--dropout_p', type=float, default=0.1)
     parser.add_argument('--activation', type=str, choices=['relu'], default='relu')
-    parser.add_argument('--layer_norm_eps', type=float, default=1e-5)
+    parser.add_argument('--norm', type=str, default='layer')
+    parser.add_argument('--norm_eps', type=float, default=1e-5)
     parser.add_argument('--norm_first', type=bool, default=False)
     parser.add_argument('--num_hidden_encoder_layers', type=int, default=2)
     parser.add_argument('--sinkhorn_tau', type=float, default=5e-2)
@@ -54,6 +55,7 @@ def objective(trial):
     # baseline
     parser.add_argument('--num_encoder_layers', type=int, default=3)
     parser.add_argument('--num_hidden_decoder_layers', type=int, default=2)
+    parser.add_argument('--clip_logit_c', type=int, default=None)
 
     args = parser.parse_args()
 

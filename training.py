@@ -11,7 +11,7 @@ from torch.optim.lr_scheduler import LambdaLR
 import os
 
 from torch.utils.tensorboard import SummaryWriter
-from utility import BatchGraphInput, custom_collate_fn, len_to_gt_len_ratio
+from utility import BatchGraphInput, avg_tour_len, custom_collate_fn, len_to_gt_len_ratio, valid_tour_ratio
 from models.utility import TourLossReinforce, ValidTourLossReinforce
 from utility import BatchGraphInput, custom_collate_fn
 
@@ -222,30 +222,32 @@ class Trainer:
 
     
     def do_eval(self):
-        self.model.eval()
-        logger.info("***** Running evaluation *****")
-        eval_loss = 0
-        n_samples = 0
-        n_batches = 0
-        metrics_results = {k: [] for k in self.metrics.keys()}
-        with torch.no_grad():
-            for batch in tqdm(self.eval_dataloader, desc="Evaluation...", mininterval=0.5, miniters=2):
-                step_loss, step_metrics_results = self.eval_step(batch)
-                eval_loss += step_loss.item()
-                for metric_name, metric_value in step_metrics_results.items():
-                    metrics_results[metric_name].append(metric_value)
-                if isinstance(batch, (torch.Tensor, BatchGraphInput)):
-                    n_samples += len(batch)
-                else:
-                    n_samples += len(batch[0])
-                n_batches += 1
-        eval_loss /= n_batches
-        logger.info("***** evaluation completed *****")
-        logger.info(f"Eval loss: {eval_loss} | Processed sample: {n_samples}")
-        for metric_name in metrics_results.keys():
-            avg = np.mean(metrics_results[metric_name])
-            metrics_results[metric_name] = avg
-            logger.info(f"Eval `{metric_name}`: {metrics_results[metric_name]}")
+        eval_loss, metrics_results = torch.inf, {}
+        if self.eval_dataloader is not None:
+            self.model.eval()
+            logger.info("***** Running evaluation *****")
+            eval_loss = 0
+            n_samples = 0
+            n_batches = 0
+            metrics_results = {k: [] for k in self.metrics.keys()}
+            with torch.no_grad():
+                for batch in tqdm(self.eval_dataloader, desc="Evaluation...", mininterval=0.5, miniters=2):
+                    step_loss, step_metrics_results = self.eval_step(batch)
+                    eval_loss += step_loss.item()
+                    for metric_name, metric_value in step_metrics_results.items():
+                        metrics_results[metric_name].append(metric_value)
+                    if isinstance(batch, (torch.Tensor, BatchGraphInput)):
+                        n_samples += len(batch)
+                    else:
+                        n_samples += len(batch[0])
+                    n_batches += 1
+            eval_loss /= n_batches
+            logger.info("***** evaluation completed *****")
+            logger.info(f"Eval loss: {eval_loss} | Processed sample: {n_samples}")
+            for metric_name in metrics_results.keys():
+                avg = np.mean(metrics_results[metric_name])
+                metrics_results[metric_name] = avg
+                logger.info(f"Eval `{metric_name}`: {metrics_results[metric_name]}")
         return eval_loss, metrics_results
 
 
@@ -317,7 +319,7 @@ class Trainer:
 class ReinforceTrainer(Trainer):
 
     def build_loss_input(self, batch, model_output):
-        tours, sum_log_probs = model_output
+        tours, sum_log_probs = model_output.tour, model_output.sum_probs
         inputs = (sum_log_probs,)
         coords, gt_len = batch.coords, batch.gt_len
         targets = (coords[torch.arange(len(tours)).view(-1, 1), tours], gt_len.to(sum_log_probs.device))
@@ -328,11 +330,10 @@ class ReinforceTrainer(Trainer):
 class CustomReinforceTrainer(Trainer):
 
     def build_loss_input(self, batch, model_output):
-        tours, attn_matrix = model_output
-        sum_log_probs = torch.max(attn_matrix, dim=-1)[0].sum(dim=-1)
+        tours, sum_probs, attn_matrix = model_output.tour, model_output.sum_probs, model_output.attn_matrix
         coords, gt_len = batch.coords, batch.gt_len
-        inputs = (sum_log_probs, coords[torch.arange(len(tours)).view(-1, 1), tours], tours)
-        targets = (gt_len.to(sum_log_probs.device),)
+        inputs = (sum_probs, coords[torch.arange(len(tours)).view(-1, 1), tours], tours, batch.gt_tour)
+        targets = (gt_len.to(sum_probs.device), attn_matrix, batch.coords)
         return inputs, targets
 
 
@@ -447,6 +448,10 @@ def get_metrics(args):
         for metric in args.metrics:
             if metric == 'len_to_gt_len_ratio':
                 metrics[metric] = len_to_gt_len_ratio
+            elif metric == 'valid_tour_ratio':
+                metrics[metric] = valid_tour_ratio
+            elif metric == 'avg_tour_len':
+                metrics[metric] = avg_tour_len
             else:
                 # TODO: eventually add other metrics
                 raise NotImplementedError()
