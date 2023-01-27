@@ -355,6 +355,7 @@ class TSPCustomTransformer(nn.Module):
         positional_encoding='sin',
         use_feedforward_block_sa=False,
         use_feedforward_block_ca=True,
+        clip_logit_c_ca=None,
         **kwargs) -> None:
 
         super().__init__()
@@ -391,7 +392,8 @@ class TSPCustomTransformer(nn.Module):
             use_q_residual_sa=False,
             use_q_residual_ca=False,
             dropout_p_sa=dropout_p,
-            dropout_p_ca=0.)
+            dropout_p_ca=0.,
+            clip_logit_c_ca=clip_logit_c_ca)
 
         self.d_model = d_model
         assert d_model % nhead == 0, "d_model must be divisible by nhead"
@@ -421,7 +423,8 @@ class TSPCustomTransformer(nn.Module):
             use_q_proj_ca=args.use_q_proj_ca,
             positional_encoding=args.positional_encoding,
             use_feedforward_block_sa=args.use_feedforward_block_sa,
-            use_feedforward_block_ca=args.use_feedforward_block_ca)
+            use_feedforward_block_ca=args.use_feedforward_block_ca,
+            clip_logit_c_ca=args.clip_logit_c)
 
 
     def encode(self, key_value, attn_mask=None):
