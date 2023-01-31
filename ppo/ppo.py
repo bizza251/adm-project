@@ -83,7 +83,7 @@ class PPO:
                 ratio = logratio.exp()
                 clipped_ratio = torch.clip(ratio, *clip_ratio)
                 candidate_loss = - reward_buffer[batch_idxs] * torch.stack([ratio, clipped_ratio])
-                loss = torch.min(candidate_loss, dim=0)[0].mean()
+                loss = torch.max(candidate_loss, dim=0)[0].mean()
                 
                 self.optimizer.zero_grad()
                 loss.backward()
