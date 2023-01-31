@@ -1,4 +1,5 @@
-from training import Trainer, get_trainer
+from training.trainer import Trainer
+from training.trainer_factory import get_trainer
 import argparse
 
 
@@ -11,7 +12,7 @@ if __name__ == '__main__':
     parser.add_argument('--do_test', action='store_true')
 
     # training args
-    parser.add_argument('--train_mode', type=str, choices=['supervised', 'reinforce'], default='supervised')
+    parser.add_argument('--train_mode', type=str, choices=['supervised', 'reinforce', 'ppo'], default='supervised')
     parser.add_argument('--train_batch_size', type=int, default=16)
     parser.add_argument('--eval_batch_size', type=int, default=16)
     parser.add_argument('--optimizer', type=str, choices=['adam', 'sgd'], default='adam')
@@ -54,6 +55,16 @@ if __name__ == '__main__':
     parser.add_argument('--num_encoder_layers', type=int, default=3)
     parser.add_argument('--num_hidden_decoder_layers', type=int, default=2)
     parser.add_argument('--clip_logit_c', type=int, default=None)
+
+    # PPO
+    # parser.add_argument('--n_envs', type=int, default=8)
+    parser.add_argument('--env_nodes', type=int, default=50)
+    parser.add_argument('--total_update_steps', type=int, default=int(1e6))
+    parser.add_argument('--rollout_steps', type=int, default=128)
+    parser.add_argument('--update_batch_size', type=int, default=64)
+    parser.add_argument('--update_epochs', type=int, default=10)
+    parser.add_argument('--ppo_eps', type=float, default=0.2)
+    parser.add_argument('--steps_per_eval', type=int, default=1)
 
     args = parser.parse_args()
 

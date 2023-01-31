@@ -6,6 +6,16 @@ from torch import Tensor
 from dataclasses import dataclass
 import torch
 import os
+import logging
+
+
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+logging.basicConfig(
+    format="%(levelname)s: %(message)s"
+)
+
 
 
 def path_cost(path : list, weights : dict, cycle=True) -> int:

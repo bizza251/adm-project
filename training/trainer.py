@@ -1,67 +1,22 @@
 import pathlib
 import numpy as np
 import torch
-from dataset import GraphDataset, RandomGraphDataset, gt_matrix_from_tour
+from dataset import get_dataloader, get_dataset, gt_matrix_from_tour
 from models.custom_transformer import TSPCustomTransformer, TSPTransformer
-import logging
 from tqdm import tqdm
-from torch.optim import Adam, SGD
-import torch.nn  as nn
-from torch.optim.lr_scheduler import LambdaLR
 import os
-
 from torch.utils.tensorboard import SummaryWriter
-from models.wrapped_models import RLAgentWithBaseline
-from utility import BatchGraphInput, avg_tour_len, custom_collate_fn, get_tour_coords, get_tour_len, len_to_gt_len_ratio, valid_tour_ratio
-from models.utility import TourLossReinforce, ValidTourLossReinforce
-from utility import BatchGraphInput, custom_collate_fn
-
-
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-logging.basicConfig(
-    format="%(levelname)s: %(message)s"
-)
-
-
-
-def train(loader, model, loss, optimizer, epochs):
-    for i in range(epochs):
-        for sample in loader:
-            n, coords, gt_tour, gt_len = sample
-            gt_matrix = gt_matrix_from_tour(gt_tour[..., :-1] - 1)
-            optimizer.zero_grad()
-            tour, attn_matrix = model(coords.to(torch.float32))
-            l = loss(attn_matrix, gt_matrix)
-            l.backward()
-            optimizer.step()
-
-
-
-def load_checkpoint(path, **kwargs):
-    checkpoint = torch.load(path)
-    out = {}
-    for key, obj in checkpoint.items():
-        if key in kwargs:
-            if hasattr(kwargs[key], 'load_state_dict'):
-                kwargs[key].load_state_dict(obj)
-            else:
-                out[key] = obj
-        else:
-            out[key] = obj
-            logger.warning(f"`{key}` not found in checkpoint `{path}`.")
-    return out
-
+from utility import BatchGraphInput, get_tour_coords, get_tour_len
+from training.utility import *
 
 
 class Trainer:
 
     exclude_from_checkpoint = {
-        'train_dataloader',
+        'train_dataset',
         'save_epochs',
         'epochs',
-        'eval_dataloader',
+        'eval_set',
         'checkpoint_dir',
         'metrics',
         'loss',
@@ -71,11 +26,11 @@ class Trainer:
     def __init__(
         self,
         model,
-        train_dataloader,
+        train_dataset,
         optimizer,
         loss,
         epochs,
-        eval_dataloader=None,
+        eval_dataset=None,
         scheduler=None,
         checkpoint_dir=None,
         resume_from_checkpoint=None,
@@ -88,11 +43,11 @@ class Trainer:
     ):
 
         self.model = model
-        self.train_dataloader = train_dataloader
+        self.train_dataloader = get_dataloader(train_dataset, kwargs['train_batch_size'], kwargs['dataloader_num_workers'])
         self.optimizer = optimizer
         self.loss = loss
         self.epochs = epochs
-        self.eval_dataloader = eval_dataloader
+        self.eval_dataloader = get_dataloader(eval_dataset, kwargs['eval_batch_size'], kwargs['dataloader_num_workers'])
         self.scheduler = scheduler
         self.checkpoint_dir = checkpoint_dir
         self.device = device
@@ -123,31 +78,25 @@ class Trainer:
             logger.info("Checkpoint loaded!")
 
         self.model.to(device)
-        self.loss.to(device)
+        if self.loss is not None:
+            self.loss.to(device)
 
-    
+
     @classmethod
     def from_args(cls, args):
-        kwargs = {k: v for k, v in vars(args).items() if k not in {'model', 'train_dataloader', 'eval_dataloader', 'optimizer', 'loss', 'epochs', 'metrics'}}
-        model = get_model(args)
-        train_dataloader = get_train_dataloader(args)
-        eval_dataloader = get_eval_dataloader(args)
-        optimizer = get_optimizer(args, model)
-        loss = get_loss(args)
-        scheduler = get_lr_scheduler(args, optimizer)
-        metrics = get_metrics(args)
+        training_commons = get_training_commons(args)
 
         return cls(
-            model,
-            train_dataloader,
-            optimizer,
-            loss,
+            training_commons.model,
+            training_commons.train_dataset,
+            training_commons.optimizer,
+            training_commons.loss,
             args.epochs,
-            eval_dataloader,
-            scheduler=scheduler,
-            metrics=metrics,
-            **kwargs)
-
+            training_commons.eval_dataset,
+            scheduler=training_commons.scheduler,
+            metrics=training_commons.metrics,
+            **training_commons.kwargs)
+    
     
     def save_checkpoint(self, epoch, is_best=False):
         if self.checkpoint_dir:
@@ -362,148 +311,3 @@ class CustomReinforceTrainer(ReinforceTrainer):
 
 class CustomBaselineReinforceTrainer(CustomReinforceTrainer, BaselineReinforceTrainer):
     ...
-
-
-
-
-def get_model(args):
-    if args.model == 'custom':
-        model = TSPCustomTransformer.from_args(args)
-    elif args.model == 'baseline':
-        model = TSPTransformer.from_args(args)
-    else:
-        raise NotImplementedError()
-    if args.train_mode == 'reinforce' and args.reinforce_baseline == 'baseline':
-        model = RLAgentWithBaseline(model)
-    return model.to(args.device)
-
-
-def get_optimizer(args, model):
-    if hasattr(model, 'model'):
-        params = model.model.parameters
-    else:
-        params = model.parameters
-    if args.optimizer == 'adam':
-        return Adam(params(), lr=args.learning_rate)
-    elif args.optimizer == 'sgd':
-        return SGD(params(), lr=args.learning_rate)
-    else:
-        raise NotImplementedError()
-
-
-def get_train_dataset(args):
-    # if args.train_dataset == 'custom':
-    #     return GraphDataset()
-    # else:
-    #     return RandomGraphDataset(args.train_dataset)
-    return RandomGraphDataset(args.train_dataset)
-
-
-def get_eval_dataset(args):
-    if args.train_dataset == 'custom':
-        return GraphDataset()
-    else:
-        return RandomGraphDataset(args.eval_dataset)
-
-
-def get_train_dataloader(args):
-    if args.do_train:
-        dataset = get_train_dataset(args)
-        return torch.utils.data.DataLoader(
-            dataset, 
-            shuffle=True,
-            batch_size=args.train_batch_size,
-            num_workers=args.dataloader_num_workers,
-            collate_fn=custom_collate_fn)
-
-
-def get_eval_dataloader(args):
-    if args.do_eval:
-        dataset = get_eval_dataset(args)
-        return torch.utils.data.DataLoader(
-            dataset, 
-            shuffle=True,
-            batch_size=args.eval_batch_size,
-            num_workers=args.dataloader_num_workers,
-            collate_fn=custom_collate_fn)
-
-
-def get_loss(args):
-    if args.loss == 'mse':
-        loss = nn.MSELoss()
-    elif args.loss == 'reinforce_loss':
-        # if args.model == 'custom':
-        #     loss = ValidTourLossReinforce()
-        # else:
-        loss = TourLossReinforce()
-    else:
-        raise NotImplementedError()
-    return loss.to(args.device)
-
-
-def get_transformer_lr_scheduler(optim, d_model, warmup_steps):
-    for group in optim.param_groups:
-        group['lr'] = 1
-    def lambda_lr(s):
-        d_model_ = d_model
-        warm_up = warmup_steps
-        s += 1
-        return (d_model_ ** -.5) * min(s ** -.5, s * warm_up ** -1.5)
-    return LambdaLR(optim, lambda_lr)
-
-
-def get_lr_scheduler(args, optim):
-    if args.lr_scheduler is None:
-        return
-    elif args.lr_scheduler == 'transformer':
-        return get_transformer_lr_scheduler(optim, args.d_model, args.warmup_steps)
-    else:
-        raise NotImplementedError()
-
-
-def get_trainer(args):
-    if args.train_mode == 'supervised':
-        if args.model != 'custom':
-            raise NotImplementedError()
-        else:
-            trainer = Trainer.from_args(args)
-    elif args.train_mode == 'reinforce':
-        if args.model == 'baseline':
-            if args.reinforce_baseline == 'baseline':
-                trainer = BaselineReinforceTrainer.from_args(args)
-            else:
-                trainer = ReinforceTrainer.from_args(args)
-        elif args.model == 'custom':
-            if args.reinforce_baseline == 'baseline':
-                trainer = CustomBaselineReinforceTrainer.from_args(args)
-            else:
-                trainer = CustomReinforceTrainer.from_args(args)
-    else:
-        raise NotImplementedError()
-    return trainer
-
-
-
-def get_metrics(args):
-    metrics = {}
-    if args.metrics is not None:
-        for metric in args.metrics:
-            if metric == 'len_to_gt_len_ratio':
-                metrics[metric] = len_to_gt_len_ratio
-            elif metric == 'valid_tour_ratio':
-                metrics[metric] = valid_tour_ratio
-            elif metric == 'avg_tour_len':
-                metrics[metric] = avg_tour_len
-            else:
-                # TODO: eventually add other metrics
-                raise NotImplementedError()
-    return metrics
-
-
-if __name__ == '__main__':
-    dataset = GraphDataset()
-    loader = torch.utils.data.DataLoader(dataset, batch_size=4)
-    model = TSPCustomTransformer(nhead = 4)
-    loss = torch.nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-    train(loader, model, loss, optimizer, 50)

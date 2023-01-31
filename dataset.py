@@ -6,7 +6,7 @@ from problem_solver import problem_solver
 from models.custom_transformer import TSPCustomTransformer
 from math import ceil, floor
 from random import shuffle
-from utility import BatchGraphInput
+from utility import BatchGraphInput, custom_collate_fn
 import queue
 from itertools import cycle
 
@@ -109,6 +109,21 @@ class RandomGraphDatasetIt(torch.utils.data.IterableDataset):
         while not buffer.empty():
             yield self.mapping_func(torch.load(buffer.get(block=False)))
     
+
+
+def get_dataset(path):
+    return RandomGraphDataset(path)
+
+
+    
+def get_dataloader(dataset, batch_size, num_workers, collate_fn=custom_collate_fn):
+    return torch.utils.data.DataLoader(
+        dataset, 
+        shuffle=True,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        collate_fn=collate_fn)
+
 
 
 if __name__ == '__main__':

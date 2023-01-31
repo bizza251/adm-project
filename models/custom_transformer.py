@@ -443,7 +443,7 @@ class TSPCustomTransformer(nn.Module):
 
         attn_matrix = sinkhorn(attn_matrix, self.sinkhorn_tau, self.sinkhorn_i)
         tour = torch.empty((bsz, nodes), requires_grad=False)
-        attn_matrix = attn_matrix - attn_mask
+        # attn_matrix = attn_matrix - attn_mask
 
         # first_node_idxs = attn_mask.nonzero()[:, 0]
         # build tour using hard permutation matrix with hungarian algorithm
