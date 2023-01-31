@@ -267,17 +267,18 @@ class Trainer:
     def do_train(self):
         writer = SummaryWriter(comment=self.tb_comment)
         
-        ratio_loss_gain = 1.005 #self.ratio_loss_gain
-        patience = 3 #self.patience
+        ratio_loss_gain = 1.00005 #self.ratio_loss_gain
+        patience = 6 #self.patience
         countdown_patience = patience
         
         for epoch in range(self.start_epoch, self.epochs):
             self.epoch_begin_hook()
             
-            prev_best_loss = 10e5
+            prev_best_loss = 0
             epoch_loss = 0
             n_samples = 0
             n_batches = 0
+            use_patience = False
             for i, batch in enumerate(tqdm(self.train_dataloader, desc=f"Epoch {epoch}/{self.epochs}", mininterval=1, miniters=5)):
                 step_loss = self.train_step(batch)
                 epoch_loss += step_loss.item()
@@ -297,14 +298,14 @@ class Trainer:
             writer.add_scalar("Loss/train", epoch_loss, epoch)
 
             eval_loss, metrics_results = self.do_eval()
-            if eval_loss == 0:
-                eval_loss = 10e5
+            eval_loss_patience = eval_loss
+            eval_loss_patience = torch.tensor(eval_loss_patience)
             writer.add_scalar("Loss/eval", eval_loss, epoch)
             new_best = eval_loss < self.best_loss
             logger.info(f"[epoch {epoch}] Eval loss: {eval_loss} | Min is {self.best_loss} (epoch {self.best_epoch})")
             if new_best:
                 logger.info(f"[epoch {epoch}] New min eval loss: {eval_loss}")
-                prev_best_loss = self.best_loss
+                prev_best_loss = torch.tensor(self.best_loss)
                 self.best_loss = eval_loss
                 self.best_epoch = epoch
                 self.save_checkpoint(epoch, True)
@@ -315,8 +316,11 @@ class Trainer:
 
             if not new_best and epoch and epoch % self.save_epochs == 0:
                 self.save_checkpoint(epoch)
-            print(f'RAPPORT PREV LOSS TO CURRENT {prev_best_loss/eval_loss}')
-            if not new_best or prev_best_loss/eval_loss > ratio_loss_gain:
+            loss_ratio = torch.tensor((prev_best_loss, eval_loss_patience))
+            loss_ratio /= loss_ratio.max(0)[0]
+            loss_ratio = (loss_ratio[0]-loss_ratio[1])+1
+            print(f'RAPPORT PREV LOSS TO CURRENT {loss_ratio}')
+            if use_patience and (not new_best or loss_ratio > ratio_loss_gain):
                 countdown_patience -= 1
                 if countdown_patience <= 0:
                     break
@@ -368,7 +372,7 @@ class CustomReinforceTrainer(ReinforceTrainer):
     def build_model_input(self, batch):
         bsz, nodes = batch.coords.shape[:-1]
         attn_mask = torch.zeros((bsz, nodes, nodes), device=batch.coords.device)
-        attn_mask[torch.arange(bsz).view(-1, 1, 1), 0, batch.gt_tour[:, 0:1].unsqueeze(1) - 1] = -1e9
+        attn_mask[torch.arange(bsz).view(-1, 1, 1), 0, (batch.gt_tour[:, 0:1].unsqueeze(1) - 1).to(torch.long)] = -1e9
         return (batch.coords, attn_mask)
 
 
@@ -376,7 +380,14 @@ class CustomReinforceTrainer(ReinforceTrainer):
 class CustomBaselineReinforceTrainer(CustomReinforceTrainer, BaselineReinforceTrainer):
     ...
 
+class CustomBizzo(CustomBaselineReinforceTrainer):
+    def build_loss_inputs(self, batch, model_output):
+        return super().build_loss_inputs(batch, model_output)
 
+    def build_loss_targets(self, batch, model_output):
+        target_baseline = (get_tour_len(get_tour_coords(batch.coords, model_output.bsln.tour)),) 
+        target_gt = (batch.gt_len.to(model_output.sum_log_probs.device),)
+        return target_gt
 
 
 def get_model(args):
@@ -386,7 +397,7 @@ def get_model(args):
         model = TSPTransformer.from_args(args)
     else:
         raise NotImplementedError()
-    if args.train_mode == 'reinforce' and args.reinforce_baseline == 'baseline':
+    if args.train_mode == 'reinforce' and (args.reinforce_baseline == 'baseline' or args.reinforce_baseline == 'bizzo'):
         model = RLAgentWithBaseline(model)
     return model.to(args.device)
 
@@ -489,8 +500,10 @@ def get_trainer(args):
         elif args.model == 'custom':
             if args.reinforce_baseline == 'baseline':
                 trainer = CustomBaselineReinforceTrainer.from_args(args)
-            else:
+            elif args.reinforce_baseline == 'gt':
                 trainer = CustomReinforceTrainer.from_args(args)
+            else:
+                trainer = CustomBizzo.from_args(args)
     else:
         raise NotImplementedError()
     return trainer

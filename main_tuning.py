@@ -4,6 +4,7 @@ import optuna
 import logging
 import sys
 from datetime import datetime
+import json
 
 
 def objective(trial):
@@ -19,7 +20,7 @@ def objective(trial):
     parser.add_argument('--eval_batch_size', type=int, default=16)
     parser.add_argument('--optimizer', type=str, choices=['adam', 'sgd'], default='adam')
     parser.add_argument('--learning_rate', type=float, default=1e-3)
-    parser.add_argument('--epochs', type=int, default=1)
+    parser.add_argument('--epochs', type=int, default=30)
     parser.add_argument('--loss', type=str, choices=['mse', 'reinforce_loss'], default='mse')
     parser.add_argument('--checkpoint_dir', type=str, default=None)
     parser.add_argument('--resume_from_checkpoint', type=str, default=None)
@@ -97,12 +98,22 @@ def objective(trial):
         train_result = trainer.do_train()
     elif args.do_eval:
         eval_result = trainer.do_eval()
-    return trainer.best_loss #metric to be optimized
+    now = datetime.now()
+    run_name = f"run_{now.year}_{now.month}_{now.day}_{now.hour}_{now.minute}"  # Unique identifier of the study.
+    params = {}
+    for key in trial.params.keys():
+        params[key] = trial.params[key]
+    params['len_to_gt_len_ratio'] = trainer.best_metrics['len_to_gt_len_ratio']
+    params = json.dumps(params, indent = 4)
+
+    with open(f"tuning/params_{study_name}.json", "w") as outfile:
+        outfile.write(params)
+    return trainer.best_metrics['len_to_gt_len_ratio'] #metric to be optimized
         
 
 
 if __name__ == '__main__':
-    n_trials = 2
+    n_trials = 50
 
     optuna.logging.get_logger("optuna").addHandler(logging.StreamHandler(sys.stdout))
     now = datetime.now()
@@ -116,5 +127,8 @@ if __name__ == '__main__':
     study.optimize(objective, n_trials=n_trials)
     
     print(study.best_params)
+    best_hyperparams = json.dumps(study.best_params, indent = 4)
+    with open(f"tuning/best_hyperparams_{study_name}.json", "w") as outfile:
+        outfile.write(best_hyperparams)
     print('To see params dashboard run the following command:')
     print(f'optuna-dashboard {storage_name}')

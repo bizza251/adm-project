@@ -1,12 +1,9 @@
 from training import Trainer, get_trainer
 import argparse
-import optuna
-import logging
-import sys
-from datetime import datetime
 
 
-def objective(trial):
+
+if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--do_train', action='store_true')
@@ -19,7 +16,7 @@ def objective(trial):
     parser.add_argument('--eval_batch_size', type=int, default=16)
     parser.add_argument('--optimizer', type=str, choices=['adam', 'sgd'], default='adam')
     parser.add_argument('--learning_rate', type=float, default=1e-3)
-    parser.add_argument('--epochs', type=int, default=1000)
+    parser.add_argument('--epochs', type=int, default=100000)
     parser.add_argument('--loss', type=str, choices=['mse', 'reinforce_loss'], default='mse')
     parser.add_argument('--checkpoint_dir', type=str, default=None)
     parser.add_argument('--resume_from_checkpoint', type=str, default=None)
@@ -32,7 +29,7 @@ def objective(trial):
     parser.add_argument('--dataloader_num_workers', type=int, default=0)
     parser.add_argument('--metrics', nargs='*', type=str, default=None)
     parser.add_argument('--tb_comment', type=str, default='')
-    parser.add_argument('--reinforce_baseline', type=str, choices=['gt', 'baseline'], default='gt')
+    parser.add_argument('--reinforce_baseline', type=str, choices=['gt', 'baseline','bizzo'], default='gt')
     
     # model args
     parser.add_argument('--model', type=str, choices=['custom', 'baseline'], default='custom')
@@ -53,8 +50,6 @@ def objective(trial):
     parser.add_argument('--use_feedforward_block_sa', action='store_true')
     parser.add_argument('--use_feedforward_block_ca', action='store_true')
     parser.add_argument('--positional_encoding', type=str, choices=['sin', 'custom_sin', 'custom'], default='custom_sin')
-    #parser.add_argument('--patience', type=int, default=10)
-    #parser.add_argument('--ratio_loss_gain', type=float, default=1.005)
     # baseline
     parser.add_argument('--num_encoder_layers', type=int, default=3)
     parser.add_argument('--num_hidden_decoder_layers', type=int, default=2)
@@ -62,34 +57,8 @@ def objective(trial):
 
     args = parser.parse_args()
 
-    #parameters to be optimized
-    args.learning_rate = trial.suggest_float('learning_rate', 10e-7, 10e-2)
-    args.train_batch_size = trial.suggest_int('train_batch_size', 16, 256)
-    args.eval_batch_size = trial.suggest_int('eval_batch_size', 16, 256)
-
     trainer = get_trainer(args)
     if args.do_train:
         train_result = trainer.do_train()
     elif args.do_eval:
         eval_result = trainer.do_eval()
-    return trainer.best_loss #metric to be optimized
-        
-
-
-if __name__ == '__main__':
-    n_trials = 100
-
-    optuna.logging.get_logger("optuna").addHandler(logging.StreamHandler(sys.stdout))
-    now = datetime.now()
-    study_name = f"tuning_{now.year}_{now.month}_{now.day}_{now.hour}_{now.minute}"  # Unique identifier of the study.
-    storage_name = "sqlite:///{}.db".format(study_name)
-
-    print('To see params dashboard run the following command:')
-    print(f'optuna-dashboard {storage_name}')
-
-    study = optuna.create_study(study_name=study_name, storage=storage_name)
-    study.optimize(objective, n_trials=n_trials)
-    
-    print(study.best_params)
-    print('To see params dashboard run the following command:')
-    print(f'optuna-dashboard {storage_name}')

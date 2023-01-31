@@ -1,0 +1,14 @@
+{
+    "clip_logit_c": 8,
+    "d_model": 128,
+    "dim_feedforward": 64,
+    "eval_batch_size": 64,
+    "ff_usage": {
+        "block_ca": false,
+        "block_sa": true
+    },
+    "learning_rate": 0.0813801504612698,
+    "num_hidden_encoder_layer": 6,
+    "positional_encoding": "custom",
+    "train_batch_size": 64
+}
