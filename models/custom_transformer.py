@@ -438,7 +438,10 @@ class TSPCustomTransformer(nn.Module):
 
     def forward(self, x, attn_mask=None):
         bsz, nodes = x.shape[:2]
-        # attn_mask = None
+        attn_mask = None
+        # attn_mask = torch.zeros((bsz, nodes, nodes), device=x.device)
+        # attn_mask[torch.arange(bsz).view(-1, 1, 1), 0, 0] = -1e9
+
         _, attn_matrix = self.encode(x, attn_mask)
 
         attn_matrix = sinkhorn(attn_matrix, self.sinkhorn_tau, self.sinkhorn_i)

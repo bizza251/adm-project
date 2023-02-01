@@ -18,8 +18,9 @@ class TourLoss(nn.Module):
     def __init__(self):
         super().__init__()
 
-    def forward(self, attn_matrix, gt_tour):
-        return torch.mean(torch.sum(1 - torch.gather(attn_matrix, 2, gt_tour.unsqueeze(2)).squeeze(), dim=-1))
+    def forward(self, attn_matrix, gt_matrix):
+        return torch.mean(torch.square(attn_matrix - gt_matrix))
+        # return torch.mean(torch.sum(1 - torch.gather(attn_matrix, 2, gt_tour.unsqueeze(2)).squeeze(), dim=-1))
 
 
 
@@ -34,6 +35,26 @@ class TourLossReinforce(nn.Module):
     ) -> Tensor:
         tour_len = get_tour_len(get_tour_coords(coords, tour))
         return torch.mean((tour_len - tgt_len) * sum_log_probs)
+
+
+
+class TourLossReinforceMixed(nn.Module):
+    
+    def forward(
+        self,
+        coords: Tensor,
+        sum_log_probs: Tensor,
+        tour: Tensor,
+        tgt_len: Tensor,
+        tgt_tour: Tensor
+    ) -> Tensor:
+        tour_len = get_tour_len(get_tour_coords(coords, tour))
+        if torch.rand(1).item() < 0.99:
+            tgt_tour -= 1
+            reward = - (tour == tgt_tour).sum(-1).to(sum_log_probs.device)
+        else:
+            reward = tour_len - tgt_len
+        return torch.mean(reward * sum_log_probs)
 
 
 

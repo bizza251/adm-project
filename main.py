@@ -18,7 +18,7 @@ if __name__ == '__main__':
     parser.add_argument('--optimizer', type=str, choices=['adam', 'sgd'], default='adam')
     parser.add_argument('--learning_rate', type=float, default=1e-3)
     parser.add_argument('--epochs', type=int, default=50)
-    parser.add_argument('--loss', type=str, choices=['mse', 'reinforce_loss'], default='mse')
+    parser.add_argument('--loss', type=str, choices=['mse', 'reinforce_loss', 'reinforce_loss_mixed'], default='mse')
     parser.add_argument('--checkpoint_dir', type=str, default=None)
     parser.add_argument('--resume_from_checkpoint', type=str, default=None)
     parser.add_argument('--train_dataset', type=str, default=None)

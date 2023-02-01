@@ -152,7 +152,7 @@ class Trainer:
 
     
     def build_loss_inputs(self, batch, model_output):
-        return (model_output[1],)
+        return (model_output.attn_matrix,)
 
     
     def build_loss_targets(self, batch, model_output):
@@ -272,7 +272,7 @@ class ReinforceTrainer(Trainer):
 
     
     def build_loss_targets(self, batch, model_output):
-        return (batch.gt_len.to(model_output.sum_log_probs.device),)
+        return (batch.gt_len.to(model_output.sum_log_probs.device), batch.gt_tour)
 
 
 
