@@ -39,7 +39,7 @@ if __name__ == '__main__':
     parser.add_argument('--nhead', type=int, default=4)
     parser.add_argument('--dim_feedforward', type=int, default=512)
     parser.add_argument('--dropout_p', type=float, default=0.)
-    parser.add_argument('--activation', type=str, choices=['relu'], default='relu')
+    parser.add_argument('--activation', type=str, choices=['relu', 'tanh'], default='relu')
     parser.add_argument('--norm', type=str, default='layer')
     parser.add_argument('--norm_eps', type=float, default=1e-5)
     parser.add_argument('--norm_first', type=bool, default=False)

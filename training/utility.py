@@ -145,10 +145,10 @@ def get_training_commons(args):
     optimizer = get_optimizer(args, model)
 
     training_commons = dict(
-        model=get_model(args),
+        model=model,
         train_dataset=get_dataset(args.train_dataset),
         eval_dataset=get_dataset(args.eval_dataset),
-        optimizer=get_optimizer(args, model),
+        optimizer=optimizer,
         loss=get_loss(args),
         scheduler=get_lr_scheduler(args, optimizer),
         metrics=get_metrics(args),

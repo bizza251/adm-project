@@ -24,18 +24,50 @@ class TourLoss(nn.Module):
 
 
 
+# class TourLossReinforce(nn.Module):
+    
+#     def forward(
+#         self,
+#         coords: Tensor,
+#         sum_log_probs: Tensor,
+#         tour: Tensor,
+#         tgt_len: Tensor,
+#         tgt_tour: Tensor = None,
+#         attn_matrix: Tensor = None,
+#     ) -> Tensor:
+#         tour_len = get_tour_len(get_tour_coords(coords, tour))
+#         return torch.mean((tour_len - tgt_len) * sum_log_probs)
+
+
 class TourLossReinforce(nn.Module):
+    discount = torch.tensor((0.99), dtype=torch.float).expand(50)
+    discount = torch.pow(discount, torch.arange(50)).view(1, 50)
+    h_weights = torch.arange(1, 51, dtype=torch.float32)
+    h_weights /= h_weights.sum()
+    h_weigths = h_weights.unsqueeze(0)
     
     def forward(
         self,
         coords: Tensor,
         sum_log_probs: Tensor,
         tour: Tensor,
-        tgt_len: Tensor
+        tgt_len: Tensor,
+        tgt_tour: Tensor = None,
+        attn_matrix: Tensor = None,
     ) -> Tensor:
-        tour_len = get_tour_len(get_tour_coords(coords, tour))
-        return torch.mean((tour_len - tgt_len) * sum_log_probs)
-
+        bsz, nodes, _ = attn_matrix.shape
+        valid_gt_tour = tgt_tour[..., :-1] - 1
+        # valid_tour = tour[..., :-1]
+        h = (- torch.log(attn_matrix) * attn_matrix).sum(-1)
+        h_weigths = self.h_weights.to(attn_matrix.device).expand(bsz, -1)
+        h = torch.sum(h * h_weigths, -1).mean()
+        valid_tour = torch.distributions.Categorical(attn_matrix).sample().squeeze()
+        valid_gt_tour = valid_gt_tour.to(valid_tour.device)
+        reward = torch.where(valid_tour == valid_gt_tour, -1., 1.).contiguous().view(-1).to(attn_matrix.device)
+        # reward = torch.where(valid_tour == valid_gt_tour, -1., 1.).to(attn_matrix.device)
+        # reward = reward.cumsum(1).contiguous().view(-1)
+        log_probs = torch.gather(attn_matrix, -1, valid_tour.view(bsz, nodes, 1).to(attn_matrix.device)).squeeze().log().contiguous().view(-1)
+        return 0.6 * torch.mean(reward * log_probs) + h * 0.4
 
 
 class TourLossReinforceMixed(nn.Module):
