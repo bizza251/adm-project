@@ -63,9 +63,9 @@ class TourLossReinforce(nn.Module):
         h = torch.sum(h * h_weigths, -1).mean()
         valid_tour = torch.distributions.Categorical(attn_matrix).sample().squeeze()
         valid_gt_tour = valid_gt_tour.to(valid_tour.device)
-        reward = torch.where(valid_tour == valid_gt_tour, -1., 1.).contiguous().view(-1).to(attn_matrix.device)
-        # reward = torch.where(valid_tour == valid_gt_tour, -1., 1.).to(attn_matrix.device)
-        # reward = reward.cumsum(1).contiguous().view(-1)
+        # reward = torch.where(valid_tour == valid_gt_tour, -1., 1.).contiguous().view(-1).to(attn_matrix.device)
+        reward = torch.where(valid_tour == valid_gt_tour, -1., 0.).to(attn_matrix.device)
+        reward = reward.cumsum(1).contiguous().view(-1)
         log_probs = torch.gather(attn_matrix, -1, valid_tour.view(bsz, nodes, 1).to(attn_matrix.device)).squeeze().log().contiguous().view(-1)
         return 0.6 * torch.mean(reward * log_probs) + h * 0.4
 
