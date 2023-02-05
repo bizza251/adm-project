@@ -304,7 +304,7 @@ class CustomReinforceTrainer(ReinforceTrainer):
     def build_model_input(self, batch):
         bsz, nodes = batch.coords.shape[:-1]
         attn_mask = torch.zeros((bsz, nodes, nodes), device=batch.coords.device)
-        attn_mask[torch.arange(bsz).view(-1, 1, 1), 0, batch.gt_tour[:, 0:1].unsqueeze(1) - 1] = -1e9
+        attn_mask[torch.arange(bsz).view(-1, 1, 1), 0, (batch.gt_tour[:, 0:1].unsqueeze(1) - 1).to(torch.long)] = -1e9
         return (batch.coords, attn_mask)
 
 

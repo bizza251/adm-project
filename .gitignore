@@ -150,3 +150,6 @@ checkpoints/*
 *.pt
 runs
 logs/*
+*.mio
+*.db
+*tuning_*
