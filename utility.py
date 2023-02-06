@@ -231,7 +231,6 @@ def avg_tour_len_ils(model_output, batch, n_restarts=50, n_iterations=100, n_per
         graph = MyGraph(coords=g)
         _, l = iterated_local_search(path_cost, graph, n_restarts, n_iterations, model_output.tour[i] + 1, \
             n_permutations, n_permutations_hillclimbing)
-        print(len(set(_.tolist())))
         ils_results.append(l)
     return np.mean(ils_results).item()
 
@@ -281,7 +280,7 @@ def hillclimbing(objective: Callable, graph, start_pt: np.array, n_iterations: i
 def iterated_local_search(objective: Callable, graph, n_restarts: int, n_iterations: int, start_pt: np.array, 
     n_permutations=30,
     n_permutations_hillclimbing=30) -> Union[np.array, float]:
-    
+
     best = start_pt
     best_eval = objective(best, graph.weights)
     for i in range(n_restarts):
