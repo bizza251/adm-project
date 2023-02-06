@@ -7,7 +7,9 @@ from dataclasses import dataclass
 import torch
 import os
 import logging
-
+import torch
+import numpy as np
+from typing import Union, Callable
 
 
 logger = logging.getLogger(__name__)
@@ -32,16 +34,16 @@ def path_cost(path : list, weights : dict, cycle=True) -> int:
     cost = 0
     for i in range(len(path) - 1):
         try:
-            if (path[i], path[i + 1]) in weights.keys():
-                cost += weights[(path[i],path[i+1])]
+            if (path[i].item(), path[i + 1].item()) in weights.keys():
+                cost += weights[(path[i].item(),path[i+1].item())]
             else:
-                cost += weights[(path[i + 1],path[i])]
+                cost += weights[(path[i + 1].item(),path[i].item())]
         except:
             if cycle:
-                if (path[i], path[0]) in weights.keys():
-                    cost += weights[(path[i], path[0])]
+                if (path[i].item(), path[0].item()) in weights.keys():
+                    cost += weights[(path[i].item(), path[0].item())]
                 else:
-                    cost += weights[(path[0], path[i])]
+                    cost += weights[(path[0].item(), path[i].item())]
                 pass
     return cost
 
@@ -222,6 +224,74 @@ def avg_tour_len(model_output, batch):
     return tour_len.mean().item()
 
 
+def avg_tour_len_ils(model_output, batch, n_restarts=50, n_iterations=100, n_permutations=30, n_permutations_hillclimbing=15):
+    from graph import MyGraph
+    ils_results = []
+    for i, g in enumerate(batch.coords):
+        graph = MyGraph(coords=g)
+        _, l = iterated_local_search(path_cost, graph, n_restarts, n_iterations, model_output.tour[i] + 1, \
+            n_permutations, n_permutations_hillclimbing)
+        print(len(set(_.tolist())))
+        ils_results.append(l)
+    return np.mean(ils_results).item()
+
+
+
+# def perturb(tour: np.array, n_permutations: int = 2) -> np.array:
+#     for i in range(n_permutations):
+#         x, y = None, None
+#         while (x is None or y is None) or (x == y):
+#             x, y = np.random.randint(1, tour.shape[0]-1), np.random.randint(1, tour.shape[0]-1)
+#         _ = tour[x]
+#         tour[x] = tour[y]
+#         tour[y] = _
+#     return tour
+
+
+def perturb(tour: np.array, n_permutations: int = 2) -> np.array:
+    tour = np.array(tour)
+    for i in range(n_permutations):
+        x, y = 0, 0
+        while (x == y):
+            x, y = np.random.randint(1, tour.shape[0]-1), np.random.randint(1, tour.shape[0]-1)
+        if x == 0 or x == tour.shape[-1]:
+            print('x is trying to perturb start or end of tour')
+        if y == 0 or y == tour.shape[-1]:
+            print('y is trying to perturb start or end of tour')
+        _ = tour[x]
+        tour[x] = tour[y]
+        tour[y] = _
+    return tour
+
+
+
+def hillclimbing(objective: Callable, graph, start_pt: np.array, n_iterations: int, n_permutations=15) -> Union[np.array, float]:
+    best = start_pt
+    best_eval = objective(best, graph.weights)
+    for i in range(n_iterations):
+        start_pt = None
+        while start_pt is None:
+            start_pt = perturb(best, n_permutations)
+            proposed_tour, proposed_eval = start_pt, objective(start_pt, graph.weights)
+        if proposed_eval < best_eval:
+            best, best_eval = proposed_tour, proposed_eval
+    return best, best_eval
+
+
+def iterated_local_search(objective: Callable, graph, n_restarts: int, n_iterations: int, start_pt: np.array, 
+    n_permutations=30,
+    n_permutations_hillclimbing=30) -> Union[np.array, float]:
+    
+    best = start_pt
+    best_eval = objective(best, graph.weights)
+    for i in range(n_restarts):
+        start_pt = None
+        while start_pt is None:
+            start_pt = perturb(best, n_permutations)
+        proposed_tour, proposed_eval = hillclimbing(objective, graph, start_pt, n_iterations, n_permutations_hillclimbing)
+        if proposed_eval < best_eval:
+            best, best_eval = proposed_tour, proposed_eval
+    return best, best_eval
 
 if __name__ == '__main__':
     create_random_dataset('ALL_tsp/random/train_debug', int(1e2), 50, 2)

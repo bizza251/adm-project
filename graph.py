@@ -1,4 +1,7 @@
 import torch
+from itertools import combinations
+import math
+
 
 
 class MyGraph(object):
@@ -18,6 +21,16 @@ class MyGraph(object):
             self.sub_opt = sub_opt
         if sub_opt_cost is not None:
             self.sub_opt_cost = sub_opt_cost
+
+        if weights is None and coords is not None:
+            edges = list(combinations([x for x in range(1, len(coords) + 1)], 2))
+            weights = {}
+            for edge in edges:
+                a, b = coords[edge[0] - 1], coords[edge[1] - 1]
+                weights[edge] = math.sqrt(math.pow(a[0]-b[0],2) + math.pow(a[1]-b[1],2))
+            self.weights = weights
+
+
 
     def path_cost(self, path : list = None, cycle=True) -> int:
         """Compute the cost of a given path

@@ -66,6 +66,13 @@ if __name__ == '__main__':
     parser.add_argument('--ppo_eps', type=float, default=0.2)
     parser.add_argument('--steps_per_eval', type=int, default=1)
 
+    # ILS
+    parser.add_argument('--ils_n_restarts', type=int, default=5)
+    parser.add_argument('--ils_n_iterations', type=int, default=10)
+    parser.add_argument('--ils_n_permutations', type=int, default=15)
+    parser.add_argument('--ils_n_permutations_hillclimbing', type=int, default=7)
+
+
     args = parser.parse_args()
 
     trainer = get_trainer(args)

@@ -20,7 +20,10 @@ def get_trainer(args):
             if args.reinforce_baseline == 'baseline':
                 return CustomBaselineReinforceTrainer.from_args(args)
             else:
-                return CustomReinforceTrainer.from_args(args)
+                if not args.do_train:
+                    return TestReinforceTrainer.from_args(args)
+                else:
+                    return CustomReinforceTrainer.from_args(args)
     elif args.train_mode == 'ppo':
         return PPOTrainer.from_args(args)
     else:

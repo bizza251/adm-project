@@ -6,7 +6,7 @@ from models.custom_transformer import TSPCustomTransformer, TSPTransformer
 from tqdm import tqdm
 import os
 from torch.utils.tensorboard import SummaryWriter
-from utility import BatchGraphInput, get_tour_coords, get_tour_len
+from utility import BatchGraphInput, get_tour_coords, get_tour_len, iterated_local_search, path_cost
 from training.utility import *
 
 
@@ -14,6 +14,8 @@ class Trainer:
 
     exclude_from_checkpoint = {
         'train_dataset',
+        'eval_dataset',
+        'eval_dataloader',
         'save_epochs',
         'epochs',
         'eval_set',
@@ -311,3 +313,29 @@ class CustomReinforceTrainer(ReinforceTrainer):
 
 class CustomBaselineReinforceTrainer(CustomReinforceTrainer, BaselineReinforceTrainer):
     ...
+
+
+
+class TestReinforceTrainer(CustomReinforceTrainer):
+
+    def eval_step(self, batch):
+        '''Subclass or change this method with MethodType to customize behavior.'''
+        batch = self.process_batch(batch)
+        model_input = self.build_model_input(batch)
+        model_output = self.model(*model_input)
+
+        # create graph objects
+        # graphs = []
+        # from graph import MyGraph
+        # for g in batch.coords:
+        #     graphs.append(MyGraph(coords=g))
+
+        # iterated_local_search(path_cost, graphs[10], 50, 100, model_output.tour[10] + 1)
+        loss_inputs, loss_targets = self.build_loss_forward_input(batch, model_output)
+        l = self.loss(*loss_inputs, *loss_targets)
+        metrics_results = {}
+        if self.metrics:
+            for metric_name, metric_fun in self.metrics.items():
+                # model output, gt
+                metrics_results[metric_name] = metric_fun(model_output, batch)
+        return l, metrics_results
