@@ -6,7 +6,7 @@ from torch.optim import Adam, SGD
 import torch.nn  as nn
 from torch.optim.lr_scheduler import LambdaLR
 from models.wrapped_models import RLAgentWithBaseline
-from utility import avg_tour_len, avg_tour_len_ils, len_to_gt_len_ratio, valid_tour_ratio
+from utility import avg_tour_len, avg_tour_len_ils, avg_tour_len_ils_batch, len_to_gt_len_ratio, valid_tour_ratio
 from models.utility import TourLossReinforce
 import torch
 from utility import logger
@@ -15,7 +15,7 @@ from functools import partial
 
 
 def load_checkpoint(path, **kwargs):
-    checkpoint = torch.load(path)
+    checkpoint = torch.load(path, map_location='cpu')
     out = {}
     for key, obj in checkpoint.items():
         if key in kwargs:
@@ -131,12 +131,19 @@ def get_metrics(args):
             elif metric == 'avg_tour_len':
                 metrics[metric] = avg_tour_len
             elif metric == 'avg_tour_len_ils':
+                # f = partial(
+                #     avg_tour_len_ils, 
+                #     n_restarts=args.ils_n_restarts, 
+                #     n_iterations=args.ils_n_iterations, 
+                #     n_permutations=args.ils_n_permutations, 
+                #     n_permutations_hillclimbing=args.ils_n_permutations_hillclimbing)
                 f = partial(
-                    avg_tour_len_ils, 
-                    n_restarts=args.ils_n_restarts, 
-                    n_iterations=args.ils_n_iterations, 
-                    n_permutations=args.ils_n_permutations, 
-                    n_permutations_hillclimbing=args.ils_n_permutations_hillclimbing)
+                    avg_tour_len_ils_batch,
+                    n_restarts=args.ils_n_restarts,
+                    n_iterations=args.ils_n_iterations,
+                    k=args.ils_k,
+                    max_perturbs=args.ils_max_perturbs
+                )
                 metrics[metric] = f
             else:
                 # TODO: eventually add other metrics

@@ -71,6 +71,8 @@ if __name__ == '__main__':
     parser.add_argument('--ils_n_iterations', type=int, default=10)
     parser.add_argument('--ils_n_permutations', type=int, default=15)
     parser.add_argument('--ils_n_permutations_hillclimbing', type=int, default=7)
+    parser.add_argument('--ils_k', type=int, default=0)
+    parser.add_argument('--ils_max_perturbs', type=int, default=None)
 
 
     args = parser.parse_args()

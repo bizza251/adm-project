@@ -11,6 +11,8 @@ import torch
 import numpy as np
 from typing import Union, Callable
 
+from ils import batch_ils
+
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -181,7 +183,12 @@ def custom_collate_fn(samples: Sequence[BatchGraphInput]):
     #     )
 
 
-def get_tour_len(tour: Tensor) -> Tensor:
+def get_tour_coords(coords, tour):
+    return coords[torch.arange(len(tour)).view(-1, 1), tour]
+
+
+
+def get_tour_len(coords: Tensor, tour: Tensor = None) -> Tensor:
     """Compute the length of a batch of tours.
 
     Args:
@@ -190,14 +197,10 @@ def get_tour_len(tour: Tensor) -> Tensor:
     Returns:
         Tensor: shape (N), contains the length of each tour in the batch.
     """   
-    bsz, _, features = tour.shape 
-    diff = torch.diff(tour, dim=1)
+    if tour is not None:
+        coords = get_tour_coords(coords, tour)
+    diff = torch.diff(coords, dim=1)
     return diff.square().sum(dim=-1).sqrt().sum(dim=-1)
-
-
-
-def get_tour_coords(coords, tour):
-    return coords[torch.arange(len(tour)).view(-1, 1), tour]
 
 
 
@@ -233,6 +236,26 @@ def avg_tour_len_ils(model_output, batch, n_restarts=50, n_iterations=100, n_per
             n_permutations, n_permutations_hillclimbing)
         ils_results.append(l)
     return np.mean(ils_results).item()
+
+
+
+def avg_tour_len_ils_batch(model_output, batch, n_restarts=5, n_iterations=15, k=0, max_perturbs=None):
+    if k > 0:
+        A = model_output.attn_matrix
+        H = (- torch.log(A) * A).sum(-1)
+        whitelist_idxs = H[:, 1:].topk(k, dim=-1).indices + 1
+    else:
+        whitelist_idxs = None
+    best_tour, best_len = batch_ils(
+        get_tour_len,
+        batch.coords,
+        model_output.tour,
+        n_restarts,
+        n_iterations,
+        whitelist_idxs,
+        max_perturbs
+    )
+    return torch.mean(best_len).item()
 
 
 

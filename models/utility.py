@@ -38,7 +38,6 @@ class TourLoss(nn.Module):
 #         tour_len = get_tour_len(get_tour_coords(coords, tour))
 #         return torch.mean((tour_len - tgt_len) * sum_log_probs)
 
-
 class TourLossReinforce(nn.Module):
     discount = torch.tensor((0.99), dtype=torch.float).expand(50)
     discount = torch.pow(discount, torch.arange(50)).view(1, 50)
