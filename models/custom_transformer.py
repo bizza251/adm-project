@@ -643,7 +643,10 @@ class TSPTransformer(nn.Module):
             visited_node_mask[zero2bsz, :, idxs] = -torch.inf
             if t == n_nodes - 2:
                 last_idxs = torch.nonzero(visited_node_mask == 0)[:, -1]
-                tour[:, t + 1] = last_idxs - 1
+                try:
+                    tour[:, t + 1] = last_idxs - 1
+                except RuntimeError as e:
+                    print(e)
                 tour[:, -1] = tour[:, 0]
                 log_probs[:, t + 1] = attn_weight[zero2bsz, :, last_idxs].view(-1)
         return TourModelOutput(

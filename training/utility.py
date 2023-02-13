@@ -1,6 +1,6 @@
 from dataset import GraphDataset, RandomGraphDataset, get_dataloader, get_dataset
 from models.custom_transformer import TSPCustomTransformer, TSPTransformer
-from models.utility import TourLossReinforce, TourLossReinforceMixed
+from models.utility import CustomTourLossReinforce, TourLossReinforce, TourLossReinforceMixed
 from models.wrapped_models import RLAgentWithBaseline
 from torch.optim import Adam, SGD
 import torch.nn  as nn
@@ -94,6 +94,8 @@ def get_loss(args):
         loss = TourLossReinforce()
     elif args.loss == 'reinforce_loss_mixed':
         loss = TourLossReinforceMixed()
+    elif args.loss == 'custom_reinforce_loss':
+        loss = CustomTourLossReinforce()
     else:
         raise NotImplementedError()
     return loss.to(args.device)

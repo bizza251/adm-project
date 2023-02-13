@@ -24,21 +24,23 @@ class TourLoss(nn.Module):
 
 
 
-# class TourLossReinforce(nn.Module):
-    
-#     def forward(
-#         self,
-#         coords: Tensor,
-#         sum_log_probs: Tensor,
-#         tour: Tensor,
-#         tgt_len: Tensor,
-#         tgt_tour: Tensor = None,
-#         attn_matrix: Tensor = None,
-#     ) -> Tensor:
-#         tour_len = get_tour_len(get_tour_coords(coords, tour))
-#         return torch.mean((tour_len - tgt_len) * sum_log_probs)
-
 class TourLossReinforce(nn.Module):
+    
+    def forward(
+        self,
+        coords: Tensor,
+        sum_log_probs: Tensor,
+        tour: Tensor,
+        tgt_len: Tensor,
+        tgt_tour: Tensor = None,
+        attn_matrix: Tensor = None,
+    ) -> Tensor:
+        tour_len = get_tour_len(get_tour_coords(coords, tour))
+        return torch.mean((tour_len - tgt_len) * sum_log_probs)
+
+
+
+class CustomTourLossReinforce(nn.Module):
     discount = torch.tensor((0.99), dtype=torch.float).expand(50)
     discount = torch.pow(discount, torch.arange(50)).view(1, 50)
     h_weights = torch.arange(1, 51, dtype=torch.float32)
