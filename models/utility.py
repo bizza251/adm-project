@@ -70,8 +70,8 @@ class CustomTourLossReinforce(nn.Module):
         tour_len = get_tour_len(get_tour_coords(coords, tour))
         reward[tour_len < tgt_len] = -1
         diff = (tour_len - tgt_len).to(attn_matrix.device)
-        if torch.any(diff < 0):
-            print("Maybe it's possible...")
+        # if torch.any(diff < 0):
+        #     print("Maybe it's possible...")
         reward[tour_len < tgt_len, -1] = -10 + diff[diff < 0]
         reward = reward.cumsum(1).contiguous().view(-1)
         log_probs = torch.gather(attn_matrix, -1, valid_tour.view(bsz, nodes, 1).to(attn_matrix.device)).squeeze().log().contiguous().view(-1)

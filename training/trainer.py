@@ -287,9 +287,12 @@ class BaselineReinforceTrainer(ReinforceTrainer):
     
     def build_loss_targets(self, batch, model_output):
         if self.model.training:
-            return (get_tour_len(get_tour_coords(batch.coords, model_output.bsln.tour)),)
+            tgt_tour = model_output.bsln.tour
+            tgt_len = get_tour_len(batch.coords, tgt_tour)
+            return (tgt_len, tgt_tour, model_output.attn_matrix)
+            # return (get_tour_len(get_tour_coords(batch.coords, model_output.bsln.tour)),)
         else:
-            return (batch.gt_len.to(model_output.sum_log_probs.device),)
+            return (batch.gt_len.to(model_output.sum_log_probs.device), batch.gt_tour, getattr(model_output, 'attn_matrix', None))
 
 
 
