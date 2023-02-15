@@ -10,6 +10,7 @@ if __name__ == '__main__':
     parser.add_argument('--do_train', action='store_true')
     parser.add_argument('--do_eval', action='store_true')
     parser.add_argument('--do_test', action='store_true')
+    parser.add_argument('--do_profile', action='store_true')
 
     # training args
     parser.add_argument('--train_mode', type=str, choices=['supervised', 'reinforce', 'ppo'], default='supervised')
@@ -50,7 +51,7 @@ if __name__ == '__main__':
     parser.add_argument('--use_q_proj_ca', type=bool, default=False)
     parser.add_argument('--use_feedforward_block_sa', action='store_true')
     parser.add_argument('--use_feedforward_block_ca', action='store_true')
-    parser.add_argument('--positional_encoding', type=str, choices=['sin', 'custom_sin', 'custom'], default='custom_sin')
+    parser.add_argument('--positional_encoding', type=str, choices=['sin', 'custom_sin', 'custom'], default='sin')
     # baseline
     parser.add_argument('--num_encoder_layers', type=int, default=3)
     parser.add_argument('--num_hidden_decoder_layers', type=int, default=2)
@@ -74,6 +75,9 @@ if __name__ == '__main__':
     parser.add_argument('--ils_k', type=int, default=0)
     parser.add_argument('--ils_max_perturbs', type=int, default=None)
 
+    # profiling
+    parser.add_argument('--filename', type=str, default='')
+
 
     args = parser.parse_args()
 
@@ -82,3 +86,5 @@ if __name__ == '__main__':
         train_result = trainer.do_train()
     elif args.do_eval:
         eval_result = trainer.do_eval()
+    elif args.do_profile:
+        profile_result = trainer.do_eval()

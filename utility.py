@@ -1,4 +1,3 @@
-from typing import Sequence
 import numpy as np
 from scipy.spatial.distance import pdist
 import networkx as nx
@@ -9,9 +8,8 @@ import os
 import logging
 import torch
 import numpy as np
-from typing import Union, Callable
+from typing import Union, Callable, Sequence
 
-from ils import batch_ils
 
 
 logger = logging.getLogger(__name__)
@@ -156,7 +154,8 @@ def create_random_dataset(path, n, n_nodes, n_features, max_norm=True, n_process
 class BatchGraphInput:
     coords: Tensor
     gt_tour: Tensor
-    gt_len: float
+    gt_len: Union[float, Tensor]
+    id: Union[str, Sequence[str]]= None
 
     def __len__(self):
         return 1 if len(self.coords.shape) < 3 else len(self.coords)
@@ -167,7 +166,8 @@ def custom_collate_fn(samples: Sequence[BatchGraphInput]):
     return BatchGraphInput(
             torch.stack([sample.coords for sample in samples]),
             torch.stack([sample.gt_tour for sample in samples]),
-            torch.tensor([sample.gt_len for sample in samples], dtype=torch.float32)
+            torch.tensor([sample.gt_len for sample in samples], dtype=torch.float32),
+            [sample.id for sample in samples]
     )
     # try:
     #     return BatchGraphInput(
@@ -201,61 +201,6 @@ def get_tour_len(coords: Tensor, tour: Tensor = None) -> Tensor:
         coords = get_tour_coords(coords, tour)
     diff = torch.diff(coords, dim=1)
     return diff.square().sum(dim=-1).sqrt().sum(dim=-1)
-
-
-
-def len_to_gt_len_ratio(model_output, batch):
-    tours = model_output.tour
-    tour_coords = batch.coords[torch.arange(len(tours)).view(-1, 1), tours]
-    tour_len = get_tour_len(tour_coords)
-    return (tour_len.cpu() / batch.gt_len).mean().item()
-
-
-
-def valid_tour_ratio(model_output, batch):
-    tours = model_output.tour
-    expected_unique_nodes = tours.shape[1] - 1
-    unique_nodes = torch.tensor([len(set(x.tolist())) for x in tours])
-    return ((unique_nodes == expected_unique_nodes).sum() / tours.shape[0]).item()     
-
-
-
-def avg_tour_len(model_output, batch):          
-    tours = model_output.tour
-    tour_coords = batch.coords[torch.arange(len(tours)).view(-1, 1), tours]
-    tour_len = get_tour_len(tour_coords)
-    return tour_len.mean().item()
-
-
-def avg_tour_len_ils(model_output, batch, n_restarts=50, n_iterations=100, n_permutations=30, n_permutations_hillclimbing=15):
-    from graph import MyGraph
-    ils_results = []
-    for i, g in enumerate(batch.coords):
-        graph = MyGraph(coords=g)
-        _, l = iterated_local_search(path_cost, graph, n_restarts, n_iterations, model_output.tour[i] + 1, \
-            n_permutations, n_permutations_hillclimbing)
-        ils_results.append(l)
-    return np.mean(ils_results).item()
-
-
-
-def avg_tour_len_ils_batch(model_output, batch, n_restarts=5, n_iterations=15, k=0, max_perturbs=None):
-    if k > 0:
-        A = model_output.attn_matrix
-        H = (- torch.log(A) * A).sum(-1)
-        whitelist_idxs = H[:, 1:].topk(k, dim=-1).indices + 1
-    else:
-        whitelist_idxs = None
-    best_tour, best_len = batch_ils(
-        get_tour_len,
-        batch.coords,
-        model_output.tour,
-        n_restarts,
-        n_iterations,
-        whitelist_idxs,
-        max_perturbs
-    )
-    return torch.mean(best_len).item()
 
 
 

@@ -1,4 +1,5 @@
 from dataset import GraphDataset, RandomGraphDataset, get_dataloader, get_dataset
+from ils import batch_ils
 from models.custom_transformer import TSPCustomTransformer, TSPTransformer
 from models.utility import CustomTourLossReinforce, TourLossReinforce, TourLossReinforceMixed
 from models.wrapped_models import RLAgentWithBaseline
@@ -6,15 +7,75 @@ from torch.optim import Adam, SGD
 import torch.nn  as nn
 from torch.optim.lr_scheduler import LambdaLR
 from models.wrapped_models import RLAgentWithBaseline
-from utility import avg_tour_len, avg_tour_len_ils, avg_tour_len_ils_batch, len_to_gt_len_ratio, valid_tour_ratio
 from models.utility import TourLossReinforce
 import torch
-from utility import logger
-
+from utility import get_tour_len, iterated_local_search, logger, path_cost
+import numpy as np
 from functools import partial
 
 
-def load_checkpoint(path, **kwargs):
+
+def len_to_gt_len_ratio(model_output, batch):
+    tours = model_output.tour
+    tour_coords = batch.coords[torch.arange(len(tours)).view(-1, 1), tours]
+    tour_len = get_tour_len(tour_coords)
+    return (tour_len.cpu() / batch.gt_len).mean().item()
+
+
+
+def valid_tour_ratio(model_output, batch):
+    tours = model_output.tour
+    expected_unique_nodes = tours.shape[1] - 1
+    unique_nodes = torch.tensor([len(set(x.tolist())) for x in tours])
+    return ((unique_nodes == expected_unique_nodes).sum() / tours.shape[0]).item()     
+
+
+
+def avg_tour_len(model_output, batch):          
+    tours = model_output.tour
+    tour_coords = batch.coords[torch.arange(len(tours)).view(-1, 1), tours]
+    tour_len = get_tour_len(tour_coords)
+    return tour_len.mean().item()
+
+
+def avg_tour_len_ils(model_output, batch, n_restarts=50, n_iterations=100, n_permutations=30, n_permutations_hillclimbing=15):
+    from graph import MyGraph
+    ils_results = []
+    for i, g in enumerate(batch.coords):
+        graph = MyGraph(coords=g)
+        _, l = iterated_local_search(path_cost, graph, n_restarts, n_iterations, model_output.tour[i] + 1, \
+            n_permutations, n_permutations_hillclimbing)
+        ils_results.append(l)
+    return np.mean(ils_results).item()
+
+
+
+def tour_len_ils_batch(model_output, batch, n_restarts=5, n_iterations=15, k=0, max_perturbs=None):
+    if k > 0:
+        A = model_output.attn_matrix
+        H = (- torch.log(A) * A).sum(-1)
+        whitelist_idxs = H[:, 1:].topk(k, dim=-1).indices + 1
+    else:
+        whitelist_idxs = None
+    best_tour, best_len = batch_ils(
+        get_tour_len,
+        batch.coords,
+        model_output.tour,
+        n_restarts,
+        n_iterations,
+        whitelist_idxs,
+        max_perturbs
+    )
+    return best_tour, best_len
+
+
+def avg_tour_len_ils_batch(model_output, batch, n_restarts=5, n_iterations=15, k=0, max_perturbs=None):
+    best_tour, best_len = tour_len_ils_batch(model_output, batch, n_restarts, n_iterations, k, max_perturbs)
+    return best_len.mean().item()
+
+
+
+def load_checkpoint(path, verbose=True, **kwargs):
     checkpoint = torch.load(path, map_location='cpu')
     out = {}
     for key, obj in checkpoint.items():
@@ -25,7 +86,8 @@ def load_checkpoint(path, **kwargs):
                 out[key] = obj
         else:
             out[key] = obj
-            logger.warning(f"`{key}` not found in checkpoint `{path}`.")
+            if verbose:
+                logger.warning(f"`{key}` not found in checkpoint `{path}`.")
     return out
 
 
@@ -37,8 +99,11 @@ def get_model(args):
         model = TSPTransformer.from_args(args)
     else:
         raise NotImplementedError()
-    if args.train_mode == 'reinforce' and args.reinforce_baseline == 'baseline':
-        model = RLAgentWithBaseline(model)
+    try:
+        if args.train_mode == 'reinforce' and args.reinforce_baseline == 'baseline':
+            model = RLAgentWithBaseline(model)
+    except AttributeError:
+        pass
     return model.to(args.device)
 
 

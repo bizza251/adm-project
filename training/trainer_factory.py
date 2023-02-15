@@ -1,11 +1,14 @@
 from training.ppo_trainer import PPOTrainer
+from training.profiler_trainer import StatsTrainer
 from training.trainer import *
 from training.utility import *
 
 
 
 def get_trainer(args):
-    if args.train_mode == 'supervised':
+    if args.do_profile:
+        return StatsTrainer.from_args(args)
+    elif args.train_mode == 'supervised':
         if args.model != 'custom':
             raise NotImplementedError()
         else:

@@ -153,3 +153,5 @@ logs/*
 *.mio
 *.db
 *tuning_*
+*.csv
+profiling_results

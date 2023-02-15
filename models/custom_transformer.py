@@ -406,7 +406,7 @@ class TSPCustomTransformer(nn.Module):
 
     @classmethod
     def from_args(cls, args):
-        activation = getattr(F, args.activation)
+        activation = getattr(F, args.activation, F.relu)
         return cls(
             in_features=args.in_features,
             d_model=args.d_model, 

@@ -48,7 +48,7 @@ def gt_matrix_from_tour(tour: Tensor):
     return matrix
 
 def map_func(x):
-    return BatchGraphInput(x.coords, torch.tensor(x.sub_opt), x.sub_opt_cost)
+    return BatchGraphInput(x.coords, torch.tensor(x.sub_opt), x.sub_opt_cost, x.name)
 
 
 class RandomGraphDataset(torch.utils.data.Dataset):
@@ -117,12 +117,13 @@ def get_dataset(path):
 
     
 def get_dataloader(dataset, batch_size, num_workers, collate_fn=custom_collate_fn):
-    return torch.utils.data.DataLoader(
-        dataset, 
-        shuffle=True,
-        batch_size=batch_size,
-        num_workers=num_workers,
-        collate_fn=collate_fn)
+    if dataset is not None:
+        return torch.utils.data.DataLoader(
+            dataset, 
+            shuffle=True,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            collate_fn=collate_fn)
 
 
 

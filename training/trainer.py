@@ -45,11 +45,11 @@ class Trainer:
     ):
 
         self.model = model
-        self.train_dataloader = get_dataloader(train_dataset, kwargs['train_batch_size'], kwargs['dataloader_num_workers'])
+        self.train_dataloader = get_dataloader(train_dataset, kwargs.get('train_batch_size'), kwargs.get('dataloader_num_workers'))
         self.optimizer = optimizer
         self.loss = loss
         self.epochs = epochs
-        self.eval_dataloader = get_dataloader(eval_dataset, kwargs['eval_batch_size'], kwargs['dataloader_num_workers'])
+        self.eval_dataloader = get_dataloader(eval_dataset, kwargs.get('eval_batch_size'), kwargs.get('dataloader_num_workers'))
         self.scheduler = scheduler
         self.checkpoint_dir = checkpoint_dir
         self.device = device
