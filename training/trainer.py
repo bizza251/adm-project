@@ -14,6 +14,7 @@ class Trainer:
 
     exclude_from_checkpoint = {
         'train_dataset',
+        'train_dataloader',
         'eval_dataset',
         'eval_dataloader',
         'save_epochs',
