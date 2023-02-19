@@ -181,6 +181,7 @@ class TSPCustomEncoderBlock(nn.Module):
         norm='layer',
         norm_eps=1e-5,
         use_q_proj=True, 
+        use_kv_proj=True,
         use_feedforward_block=True,
         use_q_residual=True,
         is_self_attn=True,
@@ -188,7 +189,7 @@ class TSPCustomEncoderBlock(nn.Module):
 
         super().__init__()
 
-        self.attn = CustomMHA(d_model, nhead, dropout_p, use_q_proj, is_self_attn=is_self_attn, clip_logit_c=clip_logit_c_ca)
+        self.attn = CustomMHA(d_model, nhead, dropout_p, use_q_proj, use_kv_proj, is_self_attn=is_self_attn, clip_logit_c=clip_logit_c_ca)
         self.norm = get_norm_layer(norm, d_model, norm_eps)
         if use_feedforward_block:
             self.ff_block = TransformerFeedforwardBlock(
@@ -241,6 +242,7 @@ class TSPCustomEncoderLayer(nn.Module):
             norm,
             norm_eps,
             True,
+            True,
             use_feedforward_block_sa,
             use_q_residual=use_q_residual_sa)
     
@@ -255,6 +257,7 @@ class TSPCustomEncoderLayer(nn.Module):
                 norm,
                 norm_eps,
                 use_q_proj_ca,
+                True,
                 use_feedforward_block_ca,
                 use_q_residual=use_q_residual_ca,
                 is_self_attn=False,
@@ -486,6 +489,7 @@ class TSPDecoderLayer(nn.Module):
             norm,
             norm_eps,
             use_q_proj=True,
+            use_kv_proj=False,
             use_feedforward_block=False,
             use_q_residual=True,
             is_self_attn=False
@@ -500,14 +504,29 @@ class TSPDecoderLayer(nn.Module):
             norm,
             norm_eps,
             use_q_proj=True,
+            use_kv_proj=False,
             use_feedforward_block=True,
             use_q_residual=True,
             is_self_attn=False
         )
 
+        self.pt_key_value_cache = None
+        self.kv_proj = nn.Linear(d_model, 2 * d_model)
+        self.d_model = d_model
+
+    
+    def reset_partial_tour_cache(self):
+        self.pt_key_value_cache = None
+
 
     def forward(self, query, key_value_partial_tour, key_value, mask=None, **kwargs):
-        out, _, __ = self.partial_tour_ca_block(query, key_value_partial_tour)
+        key_value_partial_tour = list(torch.split(self.kv_proj(key_value_partial_tour[:, -1:]), self.d_model, -1))
+        if self.pt_key_value_cache is None:
+            self.pt_key_value_cache = key_value_partial_tour
+        else:
+            self.pt_key_value_cache[0] = torch.cat([self.pt_key_value_cache[0], key_value_partial_tour[0]], dim=1)
+            self.pt_key_value_cache[1] = torch.cat([self.pt_key_value_cache[1], key_value_partial_tour[1]], dim=1)
+        out, _, _ = self.partial_tour_ca_block(query, None, cached_key_value=self.pt_key_value_cache)
         out, attn_weight, cached_key_value = self.encoder_ca_block(out, key_value, mask, **kwargs)
         return out, attn_weight, cached_key_value
 
@@ -598,6 +617,11 @@ class TSPTransformer(nn.Module):
         for layer in self.encoder:
             x, _, _ = layer(x, x)
         return x
+    
+
+    def reset_partial_tour_cache(self):
+        for layer in self.decoder:
+            layer.reset_partial_tour_cache()
 
 
     def decode(self, query, key_value, mask=None, key_value_cache=None):
@@ -628,6 +652,7 @@ class TSPTransformer(nn.Module):
         visited_node_mask = torch.zeros((bsz, 1, n_nodes + 1), dtype=x.dtype, device=x.device)
         visited_node_mask[..., 0] = -torch.inf
         key_value_cache = None
+        self.reset_partial_tour_cache()
         for t in range(n_nodes - 1):
             if t > 0:
                 query = torch.concat([query, key_value[zero2bsz, idxs].view(bsz, 1, -1) + self.PE[:, t]], dim=1)
