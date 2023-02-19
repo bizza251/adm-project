@@ -10,7 +10,7 @@ import pstats
 from uuid import uuid4
 from training.utility import get_model, load_checkpoint, logger
 import csv
-from utility import BatchGraphInput
+from utility import BatchGraphInput, np2nx
 from dataset import get_dataloader, get_dataset
 import os
 
@@ -115,8 +115,9 @@ class StatsTrainer(Trainer):
     @classmethod
     def from_args(cls, args):
         model = get_model(args)
-        checkpoint = load_checkpoint(args.resume_from_checkpoint, verbose=False)
-        model.load_state_dict(checkpoint['model'])
+        if args.resume_from_checkpoint:
+            checkpoint = load_checkpoint(args.resume_from_checkpoint, verbose=False)
+            model.load_state_dict(checkpoint['model'])
         eval_dataset = get_dataset(args.eval_dataset) 
         metrics = get_stats_metrics(args)
         if args.filename:
@@ -125,3 +126,14 @@ class StatsTrainer(Trainer):
             filename = args.model + '_' + str(uuid4())
         return cls(model, eval_dataset, filename, None, args.device, metrics, None, None, 
                    eval_batch_size=args.eval_batch_size, dataloader_num_workers=args.dataloader_num_workers)
+
+
+
+class NetworkxStatsTrainer(StatsTrainer):
+
+    def build_model_input(self, batch):
+        if len(batch) == 1:
+            out = [np2nx(batch.coords.squeeze())]
+        else:
+            out = [np2nx(x.coords.squeeze()) for x in batch.coords]
+        return (out,)

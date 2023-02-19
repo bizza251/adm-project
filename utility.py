@@ -260,5 +260,19 @@ def iterated_local_search(objective: Callable, graph, n_restarts: int, n_iterati
             best, best_eval = proposed_tour, proposed_eval
     return best, best_eval
 
+
+
+def np2nx(x: np.ndarray):
+    G = nx.Graph()
+    for i, node in enumerate(x):
+        G.add_node(i + 1, pos=node)
+        for j, node2 in enumerate(x):
+            if i != j:
+                d = ((node - node2) ** 2).sum() ** 0.5
+                G.add_edge(i + 1, j + 1, weight=d)
+    return G
+
+
+
 if __name__ == '__main__':
     create_random_dataset('ALL_tsp/random/train_debug', int(1e2), 50, 2)

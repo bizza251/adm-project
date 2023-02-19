@@ -34,7 +34,7 @@ if __name__ == '__main__':
     parser.add_argument('--reinforce_baseline', type=str, choices=['gt', 'baseline'], default='gt')
     
     # model args
-    parser.add_argument('--model', type=str, choices=['custom', 'baseline'], default='custom')
+    parser.add_argument('--model', type=str, choices=['custom', 'baseline', 'networkx'], default='custom')
     parser.add_argument('--in_features', type=int, default=2)
     parser.add_argument('--d_model', type=int, default=128)
     parser.add_argument('--nhead', type=int, default=4)

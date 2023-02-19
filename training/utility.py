@@ -2,7 +2,7 @@ from dataset import GraphDataset, RandomGraphDataset, get_dataloader, get_datase
 from ils import batch_ils
 from models.custom_transformer import TSPCustomTransformer, TSPTransformer
 from models.utility import CustomTourLossReinforce, TourLossReinforce, TourLossReinforceMixed
-from models.wrapped_models import RLAgentWithBaseline
+from models.wrapped_models import NetworkxWrapper, RLAgentWithBaseline
 from torch.optim import Adam, SGD
 import torch.nn  as nn
 from torch.optim.lr_scheduler import LambdaLR
@@ -97,6 +97,8 @@ def get_model(args):
         model = TSPCustomTransformer.from_args(args)
     elif args.model == 'baseline':
         model = TSPTransformer.from_args(args)
+    elif args.model == 'networkx':
+        model = NetworkxWrapper()
     else:
         raise NotImplementedError()
     try:
