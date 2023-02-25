@@ -1,11 +1,17 @@
 from training.ppo_trainer import PPOTrainer
+from training.profiler_trainer import NetworkxStatsTrainer, StatsTrainer
 from training.trainer import *
 from training.utility import *
 
 
 
 def get_trainer(args):
-    if args.train_mode == 'supervised':
+    if args.do_profile:
+        if args.model == 'networkx':
+            return NetworkxStatsTrainer.from_args(args)
+        else:
+            return StatsTrainer.from_args(args)
+    elif args.train_mode == 'supervised':
         if args.model != 'custom':
             raise NotImplementedError()
         else:

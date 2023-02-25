@@ -1,10 +1,12 @@
-from typing import OrderedDict
+from typing import OrderedDict, Sequence
 from torch import Tensor
 import torch
 import torch.nn as nn
 from models.utility import TourModelOutput
 from dataclasses import dataclass
 import copy
+import networkx as nx
+from utility import np2nx
 
 
 
@@ -58,3 +60,16 @@ class RLAgentWithBaseline(nn.Module):
             bsln_out = self.bsln(x, *args, **kwargs)
             return TourModelWithBaselineOutput(**vars(model_out), bsln=bsln_out)
         # return TourModelWithBaselineOutput(**vars(model_out))
+
+
+
+class NetworkxWrapper(nn.Module):
+
+    def forward(self, x: Sequence[nx.Graph]):
+        tsp = nx.approximation.traveling_salesman_problem
+        if len(x) > 1:
+            graphs = [np2nx(sample) for sample in x]
+            tour = [tsp(g, cycle=True) for g in graphs]
+        else:
+            tour = [tsp(x[0], cycle=True)]
+        return TourModelOutput(torch.tensor(tour) - 1, None, None)

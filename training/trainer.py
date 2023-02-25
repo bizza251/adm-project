@@ -14,6 +14,7 @@ class Trainer:
 
     exclude_from_checkpoint = {
         'train_dataset',
+        'train_dataloader',
         'eval_dataset',
         'eval_dataloader',
         'save_epochs',
@@ -45,11 +46,11 @@ class Trainer:
     ):
 
         self.model = model
-        self.train_dataloader = get_dataloader(train_dataset, kwargs['train_batch_size'], kwargs['dataloader_num_workers'])
+        self.train_dataloader = get_dataloader(train_dataset, kwargs.get('train_batch_size'), kwargs.get('dataloader_num_workers'))
         self.optimizer = optimizer
         self.loss = loss
         self.epochs = epochs
-        self.eval_dataloader = get_dataloader(eval_dataset, kwargs['eval_batch_size'], kwargs['dataloader_num_workers'])
+        self.eval_dataloader = get_dataloader(eval_dataset, kwargs.get('eval_batch_size'), kwargs.get('dataloader_num_workers'))
         self.scheduler = scheduler
         self.checkpoint_dir = checkpoint_dir
         self.device = device
@@ -287,9 +288,12 @@ class BaselineReinforceTrainer(ReinforceTrainer):
     
     def build_loss_targets(self, batch, model_output):
         if self.model.training:
-            return (get_tour_len(get_tour_coords(batch.coords, model_output.bsln.tour)),)
+            tgt_tour = model_output.bsln.tour
+            tgt_len = get_tour_len(batch.coords, tgt_tour)
+            return (tgt_len, tgt_tour, model_output.attn_matrix)
+            # return (get_tour_len(get_tour_coords(batch.coords, model_output.bsln.tour)),)
         else:
-            return (batch.gt_len.to(model_output.sum_log_probs.device),)
+            return (batch.gt_len.to(model_output.sum_log_probs.device), batch.gt_tour, getattr(model_output, 'attn_matrix', None))
 
 
 
